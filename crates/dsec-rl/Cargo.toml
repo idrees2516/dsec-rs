@@ -1,0 +1,20 @@
+[package]
+name = "dsec-rl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "PufferLib core, ported to Rust: episode ring replay buffer with LSTM hidden-state reset, vectorized environment pools with parallel stepping, mat-obs/flat-obs handling, GAE, an LSTM cell, a training driver, and agent sandboxes as RL environments through the Chronus data plane"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+dsec-protocol = { workspace = true }
+dsec-storage = { workspace = true }
+dsec-runtime = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
