@@ -1,0 +1,17 @@
+[package]
+name = "dsec-control"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Control plane: IAM with nested project quotas, stateless REST apiserver, k-choice power-of-two placement engine with cloud bursting, node watcher with eviction and preemption, Prometheus-style metrics"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+axum = { workspace = true }
+dsec-protocol = { workspace = true }
