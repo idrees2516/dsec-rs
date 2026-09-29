@@ -1,0 +1,52 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dsec-protocol",
+    "crates/dsec-storage",
+    "crates/dsec-runtime",
+    "crates/dsec-control",
+    "crates/dsec-sdk",
+    "crates/dsec-rl",
+    "crates/dsec-bench",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+authors = ["dsec-rs Contributors"]
+repository = "https://github.com/idrees2516/dsec-rs"
+homepage = "https://github.com/idrees2516/dsec-rs"
+documentation = "https://github.com/idrees2516/dsec-rs/tree/main/docs"
+readme = "README.md"
+keywords = ["sandbox", "agentic-ai", "reinforcement-learning", "deepseek", "rl-infrastructure"]
+categories = ["simulation", "concurrency", "science"]
+description = "Deep Rust reimplementation of the DeepSeek Elastic Compute (DSec) agentic training sandbox infrastructure, with a PufferLib core port"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+axum = "0.8"
+
+dsec-protocol = { path = "crates/dsec-protocol" }
+dsec-storage = { path = "crates/dsec-storage" }
+dsec-runtime = { path = "crates/dsec-runtime" }
+dsec-control = { path = "crates/dsec-control" }
+dsec-sdk = { path = "crates/dsec-sdk" }
+dsec-rl = { path = "crates/dsec-rl" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.dev.package."*"]
+opt-level = 1

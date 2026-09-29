@@ -1,0 +1,21 @@
+# Build artifacts
+/target
+**/*.rs.bk
+
+# Benchmark output (regenerated per machine; published results live in docs/)
+/bench-output/
+
+# Coverage / profiling
+*.profraw
+/tarpaulin-report.html
+/coverage/
+
+# IDE / OS noise
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Environment
+.env
+.env.*
