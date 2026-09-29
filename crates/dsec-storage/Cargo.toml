@@ -1,0 +1,16 @@
+[package]
+name = "dsec-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Storage layer: EROFS-style images with on-demand block loading, node-level LRU page cache, overlay CoW devices, pack_diff working-state replication, async prefetch pipeline, zero-copy shared regions"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+dsec-protocol = { workspace = true }
