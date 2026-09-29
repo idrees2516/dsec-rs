@@ -1,0 +1,20 @@
+[package]
+name = "dsec-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Node-local runtime: Edge lifecycle state machine, Aether per-sandbox proxy (channel + UDS transports), Chronus session API (exec/fs/http/streaming), four sandbox backends (FnCall/Container/MicroVM/FullVM), resource governance with pause-time memory reclaim"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+dsec-protocol = { workspace = true }
+dsec-storage = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
