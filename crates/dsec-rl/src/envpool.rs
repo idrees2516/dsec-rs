@@ -23,6 +23,36 @@ use std::thread::JoinHandle;
 use crate::error::{Error, Result};
 use crate::spaces::{Action, ActionSpace, ObsSpace};
 
+/// The environment-pool surface the training driver consumes.
+///
+/// Implemented by [`EnvPool`] (sync per-env stepping across persistent
+/// workers) and by the sandbox-backed pipelined pool (one batched
+/// data-plane round trip per vectorized step — see
+/// `dsec_rl::sandbox_env::BatchedSandboxEnvPool`). Keeping the surface a
+/// trait lets the driver pick the throughput-optimal pool per workload.
+pub trait Stepping: Send {
+    /// Number of environments in the pool.
+    fn num_envs(&self) -> usize;
+    /// Resets every env; returns initial observations (env order).
+    fn reset_all(&mut self) -> Vec<Vec<f32>>;
+    /// Steps every env with one action vector; results in env order.
+    fn step_parallel(&mut self, actions: &[Action]) -> Result<Vec<StepResult>>;
+}
+
+impl Stepping for EnvPool {
+    fn num_envs(&self) -> usize {
+        EnvPool::num_envs(self)
+    }
+
+    fn reset_all(&mut self) -> Vec<Vec<f32>> {
+        EnvPool::reset_all(self)
+    }
+
+    fn step_parallel(&mut self, actions: &[Action]) -> Result<Vec<StepResult>> {
+        EnvPool::step_parallel(self, actions)
+    }
+}
+
 /// Per-step result for one env.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StepResult {

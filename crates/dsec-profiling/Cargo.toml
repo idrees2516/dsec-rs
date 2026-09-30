@@ -1,0 +1,16 @@
+[package]
+name = "dsec-profiling"
+description = "Sampling-profiler harnesses for dsec-rs hot paths (internal tool; not published)"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+dsec-rl = { path = "../dsec-rl" }
+dsec-runtime = { path = "../dsec-runtime" }
+dsec-protocol = { path = "../dsec-protocol" }
+dsec-storage = { path = "../dsec-storage" }
+tokio = { workspace = true }
+pprof = { version = "0.14", features = ["flamegraph"] }
