@@ -64,6 +64,13 @@ cargo publish -p dsec-bench
 
 Notes:
 
+- **Dry-run limitation:** `cargo publish --dry-run` for a downstream
+  crate resolves its internal deps against the live crates.io index, so
+  it only fully verifies once the upstream crates are uploaded (the
+  leaf, `dsec-protocol`, verifies pre-upload — as do all crates after
+  the first real publish pass). The workflow publishes strictly in
+  dependency order for this reason; quality is gated by the full
+  fmt/clippy/test suite before any upload.
 - crates.io enforces **one upload per version**: bump the workspace
   `version` (and the `version = "..."` entries on the internal path
   deps) before re-publishing after any change.
