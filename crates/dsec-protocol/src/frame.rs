@@ -16,8 +16,6 @@
 //! 25      ...   payload (JSON-encoded message)
 //! ```
 
-use std::sync::OnceLock;
-
 use crate::{MAGIC, VERSION};
 
 pub const FLAG_REQUEST: u8 = 1 << 0;
@@ -137,27 +135,19 @@ impl Frame {
         self.header.flags & FLAG_STREAM_DATA != 0
     }
 
-    /// Serializes header bytes (CRC field left zero) for CRC computation.
-    fn header_bytes(&self) -> [u8; HEADER_LEN] {
-        let mut b = [0u8; HEADER_LEN];
-        b[0] = MAGIC;
-        b[1] = VERSION;
-        b[2] = self.header.flags;
-        b[3..5].copy_from_slice(&self.header.channel.to_be_bytes());
-        b[5..13].copy_from_slice(&self.header.sid.to_be_bytes());
-        b[13..17].copy_from_slice(&self.header.req_id.to_be_bytes());
-        b[17..21].copy_from_slice(&self.header.payload_len.to_be_bytes());
-        // b[21..25] = crc, filled by encode()
-        b
-    }
-
     /// Full wire encoding, header + payload, with CRC trailer.
     pub fn encode(&self) -> Vec<u8> {
-        let hdr = self.header_bytes();
         let mut out = Vec::with_capacity(HEADER_LEN + self.payload.len());
-        out.extend_from_slice(&hdr);
+        out.push(MAGIC);
+        out.push(VERSION);
+        out.push(self.header.flags);
+        out.extend_from_slice(&self.header.channel.to_be_bytes());
+        out.extend_from_slice(&self.header.sid.to_be_bytes());
+        out.extend_from_slice(&self.header.req_id.to_be_bytes());
+        out.extend_from_slice(&self.header.payload_len.to_be_bytes());
+        out.extend_from_slice(&[0, 0, 0, 0]); // CRC placeholder
         out.extend_from_slice(&self.payload);
-        let crc = CRC32::compute(&out);
+        let crc = CRC32::compute_parts(&[&out[0..21], &out[25..]]);
         out[21..25].copy_from_slice(&crc.to_be_bytes());
         out
     }
@@ -170,34 +160,39 @@ impl Frame {
                 message: format!("short frame: {} bytes", buf.len()),
             });
         }
-        if buf[0] != MAGIC {
+        Self::decode_parts(&buf[..HEADER_LEN].try_into().unwrap(), &buf[HEADER_LEN..])
+    }
+
+    /// Copy-minimal decode from a header block and payload slice (the
+    /// reader path already holds them apart; no concatenation needed).
+    ///
+    /// Per the wire spec the CRC covers exactly `header[0..21] ++ payload`
+    /// (the CRC field itself is excluded), so verification is a two-segment
+    /// computation over the buffers we already hold — no concatenated
+    /// temporary, no copy of the payload before validation.
+    pub fn decode_parts(header: &[u8; HEADER_LEN], payload: &[u8]) -> crate::Result<Self> {
+        if header[0] != MAGIC {
             return Err(crate::Error::Protocol {
                 code: crate::message::ErrorCode::Internal as u32,
-                message: format!("bad magic 0x{:02x}", buf[0]),
+                message: format!("bad magic 0x{:02x}", header[0]),
             });
         }
-        if buf[1] != VERSION {
+        if header[1] != VERSION {
             return Err(crate::Error::Protocol {
                 code: crate::message::ErrorCode::Internal as u32,
-                message: format!("unsupported version {}", buf[1]),
+                message: format!("unsupported version {}", header[1]),
             });
         }
-        let payload_len = u32::from_be_bytes([buf[17], buf[18], buf[19], buf[20]]) as usize;
-        if buf.len() != HEADER_LEN + payload_len {
+        let payload_len =
+            u32::from_be_bytes([header[17], header[18], header[19], header[20]]) as usize;
+        if payload.len() != payload_len {
             return Err(crate::Error::Protocol {
                 code: crate::message::ErrorCode::Internal as u32,
-                message: format!(
-                    "length mismatch: {} != {} + {}",
-                    buf.len(),
-                    HEADER_LEN,
-                    payload_len
-                ),
+                message: format!("length mismatch: {} != {}", payload.len(), payload_len),
             });
         }
-        let crc = u32::from_be_bytes([buf[21], buf[22], buf[23], buf[24]]);
-        let mut crc_input = buf.to_vec();
-        crc_input[21..25].copy_from_slice(&0u32.to_be_bytes());
-        if CRC32::compute(&crc_input) != crc {
+        let crc = u32::from_be_bytes([header[21], header[22], header[23], header[24]]);
+        if CRC32::compute_parts(&[&header[0..21], payload]) != crc {
             return Err(crate::Error::Protocol {
                 code: crate::message::ErrorCode::Internal as u32,
                 message: "CRC32 mismatch".into(),
@@ -205,49 +200,45 @@ impl Frame {
         }
         Ok(Frame {
             header: FrameHeader {
-                flags: buf[2],
-                channel: u16::from_be_bytes([buf[3], buf[4]]),
+                flags: header[2],
+                channel: u16::from_be_bytes([header[3], header[4]]),
                 sid: u64::from_be_bytes([
-                    buf[5], buf[6], buf[7], buf[8], buf[9], buf[10], buf[11], buf[12],
+                    header[5], header[6], header[7], header[8], header[9], header[10], header[11],
+                    header[12],
                 ]),
-                req_id: u32::from_be_bytes([buf[13], buf[14], buf[15], buf[16]]),
+                req_id: u32::from_be_bytes([header[13], header[14], header[15], header[16]]),
                 payload_len: payload_len as u32,
             },
-            payload: buf[HEADER_LEN..].to_vec(),
+            payload: payload.to_vec(),
         })
     }
 }
 
 /// CRC-32 (IEEE 802.3, reflected polynomial 0xEDB88320).
+///
+/// Backed by `crc32fast`, which selects PCLMULQDQ carryless-multiply
+/// folding on x86-64 at runtime and falls back to slice-by-8 elsewhere.
+/// Results are byte-identical to the previous table-driven version
+/// (verified against the IEEE test vectors below).
 pub struct CRC32;
 
 impl CRC32 {
-    fn table() -> &'static [u32; 256] {
-        static TABLE: OnceLock<[u32; 256]> = OnceLock::new();
-        TABLE.get_or_init(|| {
-            let mut t = [0u32; 256];
-            for i in 0..256u32 {
-                let mut c = i;
-                for _ in 0..8 {
-                    c = if c & 1 != 0 {
-                        0xEDB88320 ^ (c >> 1)
-                    } else {
-                        c >> 1
-                    };
-                }
-                t[i as usize] = c;
-            }
-            t
-        })
+    pub fn compute(data: &[u8]) -> u32 {
+        let mut h = crc32fast::Hasher::new();
+        h.update(data);
+        h.finalize()
     }
 
-    pub fn compute(data: &[u8]) -> u32 {
-        let table = Self::table();
-        let mut crc = 0xFFFF_FFFFu32;
-        for &b in data {
-            crc = table[((crc ^ b as u32) & 0xFF) as usize] ^ (crc >> 8);
+    /// CRC over several logical segments as if they were one contiguous
+    /// buffer — lets callers verify framed data without concatenating it
+    /// first (the CRC field itself sits between the segments on the wire
+    /// and is excluded by simply not passing it).
+    pub fn compute_parts(parts: &[&[u8]]) -> u32 {
+        let mut h = crc32fast::Hasher::new();
+        for p in parts {
+            h.update(p);
         }
-        crc ^ 0xFFFF_FFFF
+        h.finalize()
     }
 }
 
@@ -262,6 +253,19 @@ mod tests {
         assert_eq!(
             CRC32::compute(b"The quick brown fox jumps over the lazy dog"),
             0x414F_A339
+        );
+    }
+
+    #[test]
+    fn crc32_parts_equal_contiguous() {
+        let data: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
+        let whole = CRC32::compute(&data);
+        // Split at arbitrary boundaries incl. empty segments.
+        assert_eq!(CRC32::compute_parts(&[&data[..1000], &data[1000..]]), whole);
+        assert_eq!(CRC32::compute_parts(&[&[], &data, &[]]), whole);
+        assert_eq!(
+            CRC32::compute_parts(&[&data[..1], &data[1..7], &data[7..]]),
+            whole
         );
     }
 

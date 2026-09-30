@@ -45,9 +45,9 @@ pub async fn read_frame<R: AsyncRead + Unpin>(r: &mut R) -> Result<Option<Frame>
     if payload_len > 0 {
         r.read_exact(&mut payload).await?;
     }
-    let mut wire = header.to_vec();
-    wire.extend_from_slice(&payload);
-    Ok(Some(Frame::decode(&wire)?))
+    // Verify + parse straight from the stack header and payload slice:
+    // one allocation total (the payload), no wire concatenation.
+    Ok(Some(Frame::decode_parts(&header, &payload)?))
 }
 
 #[cfg(test)]
