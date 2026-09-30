@@ -95,22 +95,27 @@ cargo run --release -p dsec-bench -- burst --count 100000
 
 ## Results vs the paper
 
-2-core CI-class VM, release profile (full logs: [`docs/benchmarks.md`](docs/benchmarks.md)):
+2-core CI-class VM, release profile, **interleaved A/B against the `v0.1.0`
+baseline** (per-optimization deep-dive: [`docs/performance.md`](docs/performance.md);
+raw logs: [`docs/benchmarks.md`](docs/benchmarks.md)):
 
 | metric | dsec-rs | paper / reference |
 |---|---|---|
-| creation rate (paper latency model, 256 concurrent) | **5,806 /s** | ~5,000/s cluster-wide |
-| creation rate (software path, zero latency) | 36,841 /s | — |
-| burst lifecycle (create + exec + destroy) | **54,731 /s, 0 errors @ 100k** | 100k+ concurrent sandboxes |
-| pause latency (p50) | 4,634 ms (injected model) | ~4 s (kernel checkpoint + reclaim) |
+| creation rate (paper latency model, 256 concurrent) | **6,306 /s** | ~5,000/s cluster-wide |
+| creation rate (software path, A/B: +35-123%) | **13,400 /s** | — |
+| burst lifecycle (create + exec + destroy, A/B: +22%) | **56.7k /s, 0 errors @ 100k** | 100k+ concurrent sandboxes |
+| pause latency (p50) | 4,634 ms (injected model, paper-anchored) | ~4 s (kernel checkpoint + reclaim) |
 | resume latency (p50) | 1,738 ms | ~1.5 s class |
-| apiserver throughput | 20,869 RPS | must sustain ~5k creates/s |
-| RL vectorized envs | 551,449 steps/s | PufferLib ~1M+/s (Cython, larger obs) |
-| replay buffer enqueue | 12.2 M transitions/s | PufferReplayBuffer ~10M+/s |
-| GAE | 22.6 M transitions/s | C-path in pufferlib train() |
-| sandbox-env RL (real exec per step) | 14,076 steps/s | — |
-| pack_diff size ratio | **0.05×** full image | replicate working state w/o full copy |
-| placement decisions | 124,677 /s @ 1,024 nodes | must not bottleneck ~5k creates/s |
+| apiserver throughput (keep-alive, pipelined) | **129,000 RPS** (6.1x vs cold) | must sustain ~5k creates/s |
+| RL vectorized envs (A/B: 2.4x) | **1.42M steps/s** | PufferLib ~1M+/s (Cython) |
+| GAE (A/B: 5.2x) | **117M transitions/s** | C-path in pufferlib train() |
+| replay buffer enqueue | 6.3M transitions/s | PufferReplayBuffer ~10M+/s |
+| sandbox-env RL (real exec per step, A/B: 1.12x) | 18.9k steps/s | — |
+| pack_diff snapshot (A/B: 183x) | **8.9M packs/s** | replicate working state w/o full copy |
+| pack_diff apply (A/B: 4.1x) | **34.9k applies/s** | — |
+| pack_diff size ratio | **0.05x** full image | replicate working state w/o full copy |
+| placement decisions | 128k /s @ 1,024 nodes; k-choice quality 67.65% (unchanged) | must not bottleneck ~5k creates/s |
+| protocol codec (A/B: 2.1-2.9x) | 888 / 892 MB/s enc/dec | — |
 
 ## libdsec API mapping
 

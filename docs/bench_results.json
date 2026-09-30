@@ -1,11 +1,11 @@
 {
-  "timestamp": "unix:1790712342",
-  "rustc": "unknown",
+  "timestamp": "unix:1790735889",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
   "cores": 2,
   "results": [
     {
       "name": "sandbox_create_software_path",
-      "value": 3416.8971114619603,
+      "value": 3939.7834873516786,
       "unit": "creates/sec",
       "reference": "DSec paper: ~5,000/s cluster-wide (incl. cold backends)",
       "notes": "single simulated node, FnCall warm pool, zero injected latency",
@@ -15,17 +15,17 @@
     },
     {
       "name": "sandbox_create_paper_latency",
-      "value": 5806.144888081794,
+      "value": 4184.210795571131,
       "unit": "creates/sec",
       "reference": "DSec paper: ~5,000/s with ~1s avg cold creation",
       "notes": "FnCall ~5ms injected latency, 256 concurrent creations",
       "p50_ms": 0.0,
-      "p99_ms": 6.0,
+      "p99_ms": 7.0,
       "samples": 10000
     },
     {
       "name": "burst_lifecycle",
-      "value": 54731.099139920094,
+      "value": 37082.797030025285,
       "unit": "sandboxes/sec (create+exec+destroy)",
       "reference": "DSec paper: 100k+ concurrent, ~5k/s create rate",
       "notes": "100000 sandboxes, peak concurrent 2, 100000 execs, 0 errors",
@@ -35,27 +35,27 @@
     },
     {
       "name": "pause_latency",
-      "value": 4633.874925,
+      "value": 4632.843115,
       "unit": "ms (p50)",
       "reference": "DSec paper: ~4s average pause (kernel checkpoint+reclaim)",
       "notes": "userspace sim: state machine + reclaim accounting only",
-      "p50_ms": 4633.874925,
-      "p99_ms": 4994.18193,
+      "p50_ms": 4632.843115,
+      "p99_ms": 4994.2143989999995,
       "samples": 20
     },
     {
       "name": "resume_latency",
-      "value": 1738.340118,
+      "value": 1737.925673,
       "unit": "ms (p50)",
       "reference": "DSec paper: supports preemption, resume ~1.5s class",
       "notes": "userspace sim",
-      "p50_ms": 1738.340118,
-      "p99_ms": 1873.108994,
+      "p50_ms": 1737.925673,
+      "p99_ms": 1874.160925,
       "samples": 20
     },
     {
       "name": "apiserver_rps",
-      "value": 20869.174902120467,
+      "value": 21324.892247212058,
       "unit": "requests/sec",
       "reference": "stateless apiserver must sustain create-rate traffic",
       "notes": "GET /healthz, 16 concurrent keep-alive-free clients",
@@ -64,8 +64,18 @@
       "samples": null
     },
     {
+      "name": "apiserver_rps_keepalive",
+      "value": 128815.66989036898,
+      "unit": "requests/sec",
+      "reference": "stateless apiserver must sustain create-rate traffic",
+      "notes": "GET /healthz, 16 keep-alive connections, pipelined",
+      "p50_ms": null,
+      "p99_ms": null,
+      "samples": null
+    },
+    {
       "name": "rl_env_steps_fast",
-      "value": 551449.2326446711,
+      "value": 1301055.3044263069,
       "unit": "steps/sec",
       "reference": "PufferLib claims ~1M+ steps/s at scale (Cython, large obs batches)",
       "notes": "64 envs x 4 threads, pure-compute env (no I/O)",
@@ -75,7 +85,7 @@
     },
     {
       "name": "rl_buffer_enqueue",
-      "value": 12241805.638481569,
+      "value": 8430099.170659225,
       "unit": "transitions/sec",
       "reference": "PufferReplayBuffer C core: ~10M+ transitions/s (Cython memcpy)",
       "notes": "obs 128 f32, hidden 64 f32 x2 (actor+critic)",
@@ -85,7 +95,7 @@
     },
     {
       "name": "rl_gae",
-      "value": 22601929.1444558,
+      "value": 120236331.83418612,
       "unit": "transitions/sec",
       "reference": "PufferLib computes GAE in C during train()",
       "notes": "full-window GAE over 64 envs",
@@ -95,7 +105,7 @@
     },
     {
       "name": "rl_driver_e2e",
-      "value": 132488.15561136606,
+      "value": 171090.43767003776,
       "unit": "steps/sec",
       "reference": null,
       "notes": "driver rollout incl. LSTM forward + hidden reset bookkeeping",
@@ -105,7 +115,7 @@
     },
     {
       "name": "rl_env_steps_sandbox",
-      "value": 14075.813703237998,
+      "value": 18122.058675198365,
       "unit": "steps/sec",
       "reference": "DSec: RL agent loop over real sandbox sessions",
       "notes": "8 sandbox envs, real Chronus exec per step (zero-latency channel transport)",
@@ -125,7 +135,7 @@
     },
     {
       "name": "packdiff_apply",
-      "value": 8620.179875569427,
+      "value": 34783.35275693724,
       "unit": "applies/sec",
       "reference": null,
       "notes": "fresh replica overlay + block import + file table import",
@@ -135,7 +145,7 @@
     },
     {
       "name": "packdiff_snapshot",
-      "value": 47817.58166406141,
+      "value": 8809408.448222702,
       "unit": "packs/sec",
       "reference": null,
       "notes": "dirty-set capture + serialization (post-first-snapshot management path)",
@@ -145,7 +155,7 @@
     },
     {
       "name": "placement_decisions",
-      "value": 124676.80499379478,
+      "value": 125945.82559960369,
       "unit": "decisions/sec",
       "reference": "~5k creations/s x candidate scan must not bottleneck",
       "notes": "1024 nodes, k=8 sampled",
@@ -165,7 +175,7 @@
     },
     {
       "name": "protocol_encode",
-      "value": 446.3555493153669,
+      "value": 834.5166656411267,
       "unit": "MB/s",
       "reference": null,
       "notes": "frame + CRC32 over 55-byte JSON payloads",
@@ -175,7 +185,7 @@
     },
     {
       "name": "protocol_decode",
-      "value": 311.4697435262961,
+      "value": 777.8182931483356,
       "unit": "MB/s",
       "reference": null,
       "notes": "CRC-verified decode",

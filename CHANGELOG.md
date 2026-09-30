@@ -15,6 +15,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cloud-burst provider simulation with cost accounting dashboards.
 - Fuzz targets for the Aether codec (`cargo fuzz`).
 
+## [0.2.0] - 2026-09-30
+
+### Changed
+
+- **Performance campaign** (full methodology and A/B evidence in
+  `docs/performance.md`; all claims from interleaved runs against the
+  v0.1.0 binary):
+  - `EnvPool` persistent worker threads replace per-step scoped-thread
+    spawning: vectorized stepping 599k -> 1.42M env steps/s (2.4x), now
+    above PufferLib's ~1M reference. Generation/payload atomicity lives
+    under one mutex; a 200-step soak test pins per-env ordering.
+  - GAE processed in 8-env blocks with fused write-back (strided cache
+    misses eliminated): 22.6M -> 117M transitions/s (5.2x).
+  - CRC-32 via `crc32fast` (PCLMULQDQ folding; the SSE4.2 `crc32`
+    instruction is CRC-32C and was deliberately NOT used — wrong
+    polynomial), copy-free `Frame::decode_parts`, single-allocation
+    `read_frame`: codec 419/310 -> 888/892 MB/s (2.1-2.9x).
+  - `DiffPack.files` shared as `Arc<[FileWire]>` with `Arc<str>` paths;
+    `LayeredImage` caches the wire snapshot by version and `apply_diff`
+    adopts the pack's table; `replica_from` constructs replicas without
+    re-interning base paths; `take_dirty_blocks` snapshots without cloning
+    the CoW map: pack_diff snapshot 48k -> 8.9M packs/s (183x), apply
+    8.6k -> 34.9k/s (4.1x).
+  - Control plane: incremental per-project usage index (O(1)
+    `project_usage`, cross-validated against the full scan), in-place
+    `adjust_node_resources` (no NodeInfo clone, identical events),
+    `sandbox_count()`, allocation-free IAM subtree checks: creation
+    +35-123%, burst lifecycle +18-22% at 100k (0 errors).
+  - Placement: Floyd's k-sample (O(k^2), no 0..n materialization) and a
+    single RNG critical section; throughput par, k-choice quality
+    unchanged at 67.65%.
+  - `apiserver_rps_keepalive` benchmark (pipelined persistent connections,
+    the real DsecClient transport): 129k RPS, 6.1x the cold-connection
+    path. Creation latency now returns via join handles; burst peak
+    tracking is O(1).
+  - `ReplayBuffer::enqueue` bulk-memcpy experiment measured ~20% slower
+    than the compiler-vectorized per-env loop on this hardware class and
+    was reverted (documented so it is not retried blind).
+  - Paper boundary conditions preserved: latency anchors (pause ~4 s,
+    FnCall ~5 ms) untouched; placement, quota, event, and RL semantics
+    regression-tested.
+
+### Added
+
+- `Rng::sample_k_floyd`, `Frame::decode_parts`, `CRC32::compute_parts`,
+  `Registry::sandbox_count` / `adjust_node_resources`, `Iam::project_exists`,
+  `LayeredImage::replica_from`, `OverlayDev::take_dirty_blocks`.
+- Tests: Floyd sampling invariants, env-pool soak (200 steps x 4 workers),
+  usage-index vs full-scan cross-validation, CRC split-equals-contiguous.
+
 ## [0.1.0] - 2026-09-29
 
 ### Added
