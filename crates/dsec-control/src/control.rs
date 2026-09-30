@@ -161,7 +161,9 @@ impl ControlPlane {
             self.metrics.incr("dsec_api_rate_limited_total");
             return Err(Error::RateLimited(retry_ms));
         }
-        self.iam.project(&spec.project)?;
+        if !self.iam.project_exists(&spec.project) {
+            return Err(Error::ProjectNotFound(spec.project.clone()));
+        }
         self.iam
             .check_quota(&spec.project, &spec.resources, &self.registry)?;
 
@@ -196,13 +198,14 @@ impl ControlPlane {
             updated_epoch_ms: now,
         };
         self.registry.insert_sandbox(record.clone());
-        // Project the placement onto the node snapshot.
-        if let Some(mut n) = self.registry.node(&decision.node_id) {
-            n.cpu_available -= spec.resources.cpu_millicores;
-            n.mem_available -= spec.resources.mem_mib;
-            n.slots_available -= 1;
-            self.registry.upsert_node(n);
-        }
+        // Project the placement onto the node snapshot (in-place, no
+        // clone-modify-upsert round trip).
+        self.registry.adjust_node_resources(
+            &decision.node_id,
+            -spec.resources.cpu_millicores,
+            -spec.resources.mem_mib,
+            -1,
+        );
         self.metrics.incr("dsec_sandboxes_created_total");
         let elapsed = t0.elapsed().as_millis() as u64;
         self.metrics
@@ -274,13 +277,13 @@ impl ControlPlane {
             .registry
             .remove_sandbox(sid)
             .ok_or(Error::SandboxNotFound(sid))?;
-        // Return resources to the node snapshot.
-        if let Some(mut n) = self.registry.node(&removed.node_id) {
-            n.cpu_available += removed.spec.resources.cpu_millicores;
-            n.mem_available += removed.spec.resources.mem_mib;
-            n.slots_available += 1;
-            self.registry.upsert_node(n);
-        }
+        // Return resources to the node snapshot (in-place).
+        self.registry.adjust_node_resources(
+            &removed.node_id,
+            removed.spec.resources.cpu_millicores,
+            removed.spec.resources.mem_mib,
+            1,
+        );
         self.metrics.incr("dsec_sandboxes_destroyed_total");
         Ok(removed)
     }
@@ -312,7 +315,11 @@ impl ControlPlane {
             .sandboxes()
             .into_iter()
             .filter(|r| {
-                r.spec.project == project || r.spec.project.starts_with(&format!("{}/", project))
+                r.spec.project == project
+                    || r.spec
+                        .project
+                        .strip_prefix(project)
+                        .is_some_and(|rest| rest.starts_with('/'))
             })
             .collect();
         let victims = crate::watcher::preemption_victims(&records, count);

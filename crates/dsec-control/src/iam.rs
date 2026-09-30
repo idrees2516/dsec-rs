@@ -160,18 +160,24 @@ impl Iam {
     }
 
     /// Enforces the quota chain for a prospective sandbox in `project`.
+    ///
+    /// Walks the ancestor chain under the projects read lock (no
+    /// intermediate `Project` clones) and reads usage from the registry's
+    /// O(1) index.
     pub fn check_quota(
         &self,
         project: &str,
         req: &crate::model::Resources,
         registry: &Registry,
     ) -> Result<()> {
-        for ancestor in self.ancestors(project) {
-            let usage = registry.project_usage(&ancestor.name);
-            let q = &ancestor.quota;
+        let projects = self.projects.read().expect("iam poisoned");
+        let mut cur = project;
+        while let Some(p) = projects.get(cur) {
+            let usage = registry.project_usage(&p.name);
+            let q = &p.quota;
             if q.max_sandboxes >= 0 && usage.sandboxes + 1 > q.max_sandboxes {
                 return Err(Error::QuotaExceeded {
-                    project: ancestor.name.clone(),
+                    project: p.name.clone(),
                     what: format!("sandboxes {}/{}", usage.sandboxes, q.max_sandboxes),
                 });
             }
@@ -179,18 +185,30 @@ impl Iam {
                 && usage.cpu_millicores + req.cpu_millicores > q.max_cpu_millicores
             {
                 return Err(Error::QuotaExceeded {
-                    project: ancestor.name.clone(),
+                    project: p.name.clone(),
                     what: format!("cpu {}m/{}m", usage.cpu_millicores, q.max_cpu_millicores),
                 });
             }
             if q.max_mem_mib >= 0 && usage.mem_mib + req.mem_mib > q.max_mem_mib {
                 return Err(Error::QuotaExceeded {
-                    project: ancestor.name.clone(),
+                    project: p.name.clone(),
                     what: format!("mem {}Mi/{}Mi", usage.mem_mib, q.max_mem_mib),
                 });
             }
+            match &p.parent {
+                Some(parent) => cur = parent,
+                None => break,
+            }
         }
         Ok(())
+    }
+
+    /// Does this project exist? (Existence-only check without a clone.)
+    pub fn project_exists(&self, name: &str) -> bool {
+        self.projects
+            .read()
+            .expect("iam poisoned")
+            .contains_key(name)
     }
 
     /// Mints an API token bound to a project and role.
@@ -222,7 +240,9 @@ impl Iam {
             .ok_or_else(|| Error::Unauthorized("unknown token".into()))?;
         // Tokens can act on their project or any descendant.
         let allowed_project = project == info.project
-            || project.starts_with(&format!("{}/", info.project))
+            || project
+                .strip_prefix(info.project.as_str())
+                .is_some_and(|rest| rest.starts_with('/'))
             || info.project == ROOT;
         if !allowed_project {
             return Err(Error::Unauthorized(format!(
