@@ -71,6 +71,32 @@ impl Rng {
         idx.truncate(k);
         idx
     }
+
+    /// Floyd's algorithm: `k` distinct uniform indices from `0..n` in
+    /// O(k^2) time and O(k) space (for `k << n` this avoids the O(n)
+    /// index materialization of [`Self::sample_k`]). Returned sorted
+    /// ascending so callers can select positions during a single scan.
+    ///
+    /// Loop invariant: at step `j`, `j` itself can never already be
+    /// selected (earlier draws are bounded by earlier `j`s), so the
+    /// "already present" branch inserting `j` is always safe and each
+    /// iteration adds exactly one element.
+    pub fn sample_k_floyd(&mut self, n: usize, k: usize) -> Vec<usize> {
+        if k >= n {
+            return (0..n).collect();
+        }
+        let mut selected: Vec<usize> = Vec::with_capacity(k);
+        for j in (n - k)..n {
+            let t = self.below(j + 1);
+            if selected.contains(&t) {
+                selected.push(j);
+            } else {
+                selected.push(t);
+            }
+        }
+        selected.sort_unstable();
+        selected
+    }
 }
 
 #[cfg(test)]
@@ -107,6 +133,30 @@ mod tests {
         assert!(sorted.iter().all(|&i| i < 100));
         // k >= n returns identity
         assert_eq!(rng.sample_k(3, 5), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn floyd_sample_distinct_sorted_uniform() {
+        let mut rng = Rng::new(31);
+        for (n, k) in [(1000, 8), (64, 8), (10, 3), (5, 5), (3, 10)] {
+            let s = rng.sample_k_floyd(n, k);
+            let expected = k.min(n);
+            assert_eq!(s.len(), expected);
+            assert!(s.windows(2).all(|w| w[0] < w[1]), "sorted, k={} n={}", k, n);
+            assert!(s.iter().all(|&i| i < n));
+        }
+        // Statistical sanity: over many draws every position is reachable.
+        let mut seen = vec![0usize; 40];
+        for _ in 0..4000 {
+            for i in rng.sample_k_floyd(40, 4) {
+                seen[i] += 1;
+            }
+        }
+        assert!(
+            seen.iter().all(|&c| c > 0),
+            "uniform reachability: {:?}",
+            seen
+        );
     }
 
     #[test]
