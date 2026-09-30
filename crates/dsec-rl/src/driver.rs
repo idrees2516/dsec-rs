@@ -63,6 +63,19 @@ pub struct Driver {
     actor_c: Vec<f32>,
     critic_h: Vec<f32>,
     critic_c: Vec<f32>,
+    // Reusable INPUT hidden snapshot (what enqueue stores): the buffers
+    // are allocated once and refilled per step instead of four fresh
+    // clones per iteration.
+    snap_h: Vec<f32>,
+    snap_c: Vec<f32>,
+    snap_ch: Vec<f32>,
+    snap_cc: Vec<f32>,
+    // Reusable per-step scratch (obs / scalars).
+    new_obs: Vec<f32>,
+    rewards: Vec<f32>,
+    dones: Vec<bool>,
+    log_probs: Vec<f32>,
+    values: Vec<f32>,
     // Last observations per env (flattened).
     obs: Vec<f32>,
     episode_returns: Vec<f32>,
@@ -82,6 +95,7 @@ impl Driver {
     ) -> Self {
         let num_envs = pool.num_envs();
         let hidden = buffer.hidden_size();
+        let obs_size = buffer.obs_size();
         let lstm = if cfg.use_lstm && hidden > 0 {
             Some(LstmCell::new(buffer.obs_size(), hidden, seed))
         } else {
@@ -96,6 +110,15 @@ impl Driver {
             actor_c: vec![0.0; num_envs * hidden],
             critic_h: vec![0.0; num_envs * hidden],
             critic_c: vec![0.0; num_envs * hidden],
+            snap_h: vec![0.0; num_envs * hidden],
+            snap_c: vec![0.0; num_envs * hidden],
+            snap_ch: vec![0.0; num_envs * hidden],
+            snap_cc: vec![0.0; num_envs * hidden],
+            new_obs: Vec::with_capacity(num_envs * obs_size),
+            rewards: Vec::with_capacity(num_envs),
+            dones: Vec::with_capacity(num_envs),
+            log_probs: Vec::with_capacity(num_envs),
+            values: Vec::with_capacity(num_envs),
             obs: Vec::new(),
             episode_returns: vec![0.0; num_envs],
             episode_lens: vec![0; num_envs],
@@ -123,12 +146,11 @@ impl Driver {
             // 1) Snapshot the INPUT hidden state for this step (the state
             // the recurrence starts from — zero at episode starts, which
             // is exactly what the buffer's reset invariant checks).
-            let (ah, ac, ch, cc) = (
-                self.actor_h.clone(),
-                self.actor_c.clone(),
-                self.critic_h.clone(),
-                self.critic_c.clone(),
-            );
+            // Reused buffers: copy in place, no per-step allocation.
+            self.snap_h.copy_from_slice(&self.actor_h);
+            self.snap_c.copy_from_slice(&self.actor_c);
+            self.snap_ch.copy_from_slice(&self.critic_h);
+            self.snap_cc.copy_from_slice(&self.critic_c);
 
             // 2) Update LSTM hidden from current obs (recurrent feature).
             if let Some(cell) = &self.lstm {
@@ -137,14 +159,12 @@ impl Driver {
                     let h = &mut self.actor_h[env * hidden..(env + 1) * hidden];
                     let c = &mut self.actor_c[env * hidden..(env + 1) * hidden];
                     cell.forward(x, h, c);
-                    // Critic path: share the same recurrence (pufferlib
-                    // stores separate h for actor/critic; a shared encoder
-                    // is the common architecture).
-                    let xh = self.actor_h[env * hidden..(env + 1) * hidden].to_vec();
-                    self.critic_h[env * hidden..(env + 1) * hidden].copy_from_slice(&xh);
-                    self.critic_c[env * hidden..(env + 1) * hidden]
-                        .copy_from_slice(&self.actor_c[env * hidden..(env + 1) * hidden]);
                 }
+                // Critic path: share the same recurrence (pufferlib
+                // stores separate h for actor/critic; a shared encoder
+                // is the common architecture).
+                self.critic_h.copy_from_slice(&self.actor_h);
+                self.critic_c.copy_from_slice(&self.actor_c);
             }
 
             // 3) Policy.
@@ -154,18 +174,21 @@ impl Driver {
             let results = self.pool.step_parallel(&actions)?;
             // 4) Values / log probs: a deterministic stand-in (the real
             // training loop computes these in torch; here a simple
-            // heuristic keeps the port self-contained).
-            let mut new_obs = Vec::with_capacity(num_envs * obs_size);
-            let mut rewards = Vec::with_capacity(num_envs);
-            let mut dones = Vec::with_capacity(num_envs);
-            let mut log_probs = Vec::with_capacity(num_envs);
-            let mut values = Vec::with_capacity(num_envs);
+            // heuristic keeps the port self-contained). Scratch vectors
+            // are reused across steps.
+            self.new_obs.clear();
+            self.rewards.clear();
+            self.dones.clear();
+            self.log_probs.clear();
+            self.values.clear();
+            for r in &results {
+                self.new_obs.extend_from_slice(&r.obs);
+                self.rewards.push(r.reward);
+                self.dones.push(r.done);
+                self.log_probs.push(0.0f32);
+                self.values.push(r.reward); // value ~= immediate reward heuristic
+            }
             for (env, r) in results.iter().enumerate() {
-                new_obs.extend_from_slice(&r.obs);
-                rewards.push(r.reward);
-                dones.push(r.done);
-                log_probs.push(0.0f32);
-                values.push(r.reward); // value ~= immediate reward heuristic
                 self.episode_returns[env] += r.reward;
                 self.episode_lens[env] += 1;
                 if r.done {
@@ -175,17 +198,13 @@ impl Driver {
                     self.episode_lens[env] = 0;
                     // 5) pufferlib LSTM reset: zero this env's hidden state.
                     if hidden > 0 {
-                        for v in &mut self.actor_h[env * hidden..(env + 1) * hidden] {
-                            *v = 0.0;
-                        }
-                        for v in &mut self.actor_c[env * hidden..(env + 1) * hidden] {
-                            *v = 0.0;
-                        }
-                        for v in &mut self.critic_h[env * hidden..(env + 1) * hidden] {
-                            *v = 0.0;
-                        }
-                        for v in &mut self.critic_c[env * hidden..(env + 1) * hidden] {
-                            *v = 0.0;
+                        for buf in [
+                            &mut self.actor_h,
+                            &mut self.actor_c,
+                            &mut self.critic_h,
+                            &mut self.critic_c,
+                        ] {
+                            buf[env * hidden..(env + 1) * hidden].fill(0.0);
                         }
                     }
                 }
@@ -193,9 +212,18 @@ impl Driver {
 
             // 4b) Enqueue (obs from BEFORE the step, action, reward...).
             self.buffer.enqueue(
-                &self.obs, &actions, &rewards, &dones, &log_probs, &values, &ah, &ac, &ch, &cc,
+                &self.obs,
+                &actions,
+                &self.rewards,
+                &self.dones,
+                &self.log_probs,
+                &self.values,
+                &self.snap_h,
+                &self.snap_c,
+                &self.snap_ch,
+                &self.snap_cc,
             )?;
-            self.obs = new_obs;
+            std::mem::swap(&mut self.obs, &mut self.new_obs);
         }
 
         let elapsed = t0.elapsed().as_secs_f64();

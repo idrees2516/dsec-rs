@@ -272,6 +272,10 @@ impl ReplayBuffer {
             });
         }
 
+        // Per-env field copies: measured faster than field-major bulk
+        // memcpy here (each per-env copy is 256-512 B, which the compiler
+        // vectorizes into tight AVX loops; libc memcpy's large-copy path
+        // loses on this class of VM core). Enqueue stays env-interleaved.
         let slot = self.write;
         for env in 0..self.num_envs {
             let i = self.idx(slot, env);
@@ -453,40 +457,48 @@ impl ReplayBuffer {
         if self.len == 0 {
             return;
         }
-        let mut adv = vec![0.0f64; self.len];
-        // Bootstrap from the next value after the newest stored step.
-        for env in 0..self.num_envs {
-            let mut gae = 0.0f64;
-            // Walk newest -> oldest within this env's slice.
+        // Env-blocked backward pass: with slot-major storage, one env's
+        // stream strides `num_envs * 4` bytes between consecutive steps —
+        // a fresh cache line per element. Processing a block of 8 envs
+        // together touches 32-byte contiguous runs per field per step,
+        // reusing each cache line 8x. The recursion itself is unchanged
+        // (each env's GAE is independent); blocks only change traversal
+        // order. Fused write-back removes the second pass entirely.
+        const BLOCK: usize = 8;
+        let n_envs = self.num_envs;
+        let mut gae = [0.0f64; BLOCK];
+        let mut env0 = 0usize;
+        while env0 < n_envs {
+            let b = BLOCK.min(n_envs - env0);
+            gae[..b].fill(0.0);
+            // Walk newest -> oldest within this env block.
             for age_back in 0..self.len {
                 let age = self.len - 1 - age_back;
                 let slot = self.slot_of(age);
-                let i = self.idx(slot, env);
-                let done = self.dones[i] != 0;
-                let v = self.values[i] as f64;
-                let r = self.rewards[i] as f64;
-                let v_next = if done {
-                    // Episode ends here: no bootstrap across the boundary.
-                    0.0
-                } else if age + 1 < self.len {
-                    // Same episode's next stored step.
-                    self.values[self.idx(self.slot_of(age + 1), env)] as f64
-                } else {
-                    // Newest step: bootstrap with its own value estimate.
-                    v
-                };
-                let delta = r + gamma * v_next - v;
-                let mask = if done { 0.0 } else { 1.0 };
-                gae = delta + gamma * lambda * mask * gae;
-                adv[age] = gae;
+                let base = slot * n_envs;
+                for (k, g) in gae.iter_mut().enumerate().take(b) {
+                    let i = base + env0 + k;
+                    let done = self.dones[i] != 0;
+                    let v = self.values[i] as f64;
+                    let r = self.rewards[i] as f64;
+                    let v_next = if done {
+                        // Episode ends here: no bootstrap across the boundary.
+                        0.0
+                    } else if age + 1 < self.len {
+                        // Same episode's next stored step.
+                        self.values[(self.slot_of(age + 1)) * n_envs + env0 + k] as f64
+                    } else {
+                        // Newest step: bootstrap with its own value estimate.
+                        v
+                    };
+                    let delta = r + gamma * v_next - v;
+                    let mask = if done { 0.0 } else { 1.0 };
+                    *g = delta + gamma * lambda * mask * *g;
+                    self.advantages[i] = *g as f32;
+                    self.returns[i] = (*g + v) as f32;
+                }
             }
-            // Write back advantages + returns (index == step age in the ring).
-            for (age, &a) in adv.iter().enumerate() {
-                let slot = self.slot_of(age);
-                let i = self.idx(slot, env);
-                self.advantages[i] = a as f32;
-                self.returns[i] = (a + self.values[i] as f64) as f32;
-            }
+            env0 += b;
         }
     }
 
