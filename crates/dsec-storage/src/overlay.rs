@@ -142,6 +142,21 @@ impl OverlayDev {
         }
     }
 
+    /// Atomically consumes the dirty set and returns the dirty blocks'
+    /// (id, content) pairs straight out of the CoW map — one lock pass,
+    /// no full map clone (the pack_diff snapshot hot path).
+    pub(crate) fn take_dirty_blocks(&self) -> Vec<(BlockId, Vec<u8>)> {
+        let mut inner = self.inner.lock().expect("overlay poisoned");
+        let dirty = std::mem::take(&mut inner.dirty);
+        let mut out = Vec::with_capacity(dirty.len());
+        for id in &dirty {
+            if let Some(b) = inner.cow.get(id) {
+                out.push((*id, b.to_vec()));
+            }
+        }
+        out
+    }
+
     /// Blocks dirtied since the last snapshot.
     pub fn dirty_blocks(&self) -> Vec<BlockId> {
         self.inner
@@ -160,11 +175,6 @@ impl OverlayDev {
     /// Bytes written through this overlay (CoW volume).
     pub fn written_bytes(&self) -> u64 {
         self.written_bytes.load(Ordering::Relaxed)
-    }
-
-    /// Consume the dirty set, resetting pack_diff tracking.
-    pub(crate) fn take_dirty(&self) -> BTreeSet<BlockId> {
-        std::mem::take(&mut self.inner.lock().expect("overlay poisoned").dirty)
     }
 
     /// Mark blocks clean after an external apply.

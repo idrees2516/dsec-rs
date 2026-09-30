@@ -50,7 +50,11 @@ impl LruBlockCache {
         inner.tick += 1;
         let new_tick = inner.tick;
         inner.order.insert((new_tick, id));
-        inner.map.insert(id, (block.clone(), new_tick));
+        // Refresh the existing entry in place instead of re-inserting
+        // (drops one Arc clone and one hash lookup from the hit path).
+        if let Some(e) = inner.map.get_mut(&id) {
+            e.1 = new_tick;
+        }
         Some(block)
     }
 

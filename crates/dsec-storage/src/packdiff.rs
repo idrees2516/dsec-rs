@@ -2,9 +2,12 @@
 //!
 //! When the agent loop needs to fan out an army of replicas of a running
 //! sandbox (or migrate one), shipping the full image is wasteful — the
+
 //! base layer is already present on the destination. A `DiffPack` carries
 //! only the dirty blocks captured since the last snapshot, which is the
 //! paper's `pack_diff` fast path.
+
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -29,8 +32,12 @@ pub struct DiffPack {
     /// (block id, content) pairs, sorted by block id.
     pub blocks: Vec<(BlockId, Vec<u8>)>,
     /// Layered-FS metadata shipped with the diff.
+    ///
+    /// Shared as one immutable snapshot: the file table changes rarely
+    /// relative to snapshot frequency, so unchanged tables are passed by
+    /// refcount instead of deep-cloning every entry.
     #[serde(default)]
-    pub files: Vec<FileWire>,
+    pub files: Arc<[FileWire]>,
     /// Next free block of the layered allocator (prevents extent reuse).
     #[serde(default)]
     pub next_free: BlockId,
@@ -39,7 +46,7 @@ pub struct DiffPack {
 /// Wire form of one file-table entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FileWire {
-    pub path: String,
+    pub path: Arc<str>,
     pub meta: crate::imagefs::FileMeta,
 }
 
@@ -80,19 +87,16 @@ impl DiffStats {
 impl OverlayDev {
     /// Captures and clears the dirty set into a `DiffPack`.
     pub fn snapshot_diff(&self, epoch_ms: u64) -> DiffPack {
-        let dirty = self.take_dirty();
-        let cow = self.fork_state();
-        let mut blocks: Vec<(BlockId, Vec<u8>)> = dirty
-            .iter()
-            .filter_map(|id| cow.get(id).map(|b| (*id, b.to_vec())))
-            .collect();
+        // One lock pass on the overlay: consume the dirty set and copy
+        // only the dirty blocks out of the CoW map (no full map clone).
+        let mut blocks = self.take_dirty_blocks();
         blocks.sort_by_key(|(id, _)| *id);
         DiffPack {
             base_image_id: self.base_image().image_id().to_string(),
             base_digest: self.base_image().digest().to_string(),
             created_epoch_ms: epoch_ms,
             blocks,
-            files: Vec::new(),
+            files: Arc::from(Vec::new()),
             next_free: 0,
         }
     }
@@ -239,7 +243,7 @@ mod tests {
             base_digest: "dsec1-deadbeef".into(),
             created_epoch_ms: 42,
             blocks: vec![(7, block.to_vec())],
-            files: vec![],
+            files: std::sync::Arc::from(Vec::new()),
             next_free: 0,
         };
         let s = serde_json::to_vec(&pack).unwrap();

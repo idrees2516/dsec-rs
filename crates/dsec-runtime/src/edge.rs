@@ -198,7 +198,14 @@ impl EdgeNode {
             .read()
             .expect("projects poisoned")
             .iter()
-            .any(|p| spec.project == *p || spec.project.starts_with(&format!("{}/", p)));
+            .any(|p| {
+                // Zero-alloc subtree check: `project == p` or project lies
+                // under `p/` (the format!-based prefix built a String per
+                // candidate per creation).
+                spec.project
+                    .strip_prefix(p.as_str())
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+            });
         if !admitted {
             self.stats
                 .admission_rejections

@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::overlay::OverlayDev;
+use crate::packdiff::FileWire;
 use crate::{Block, BlockId, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -26,18 +27,28 @@ pub struct FileMeta {
 #[derive(Debug)]
 pub struct LayeredImage {
     overlay: Arc<OverlayDev>,
-    files: Mutex<BTreeMap<String, FileMeta>>,
+    /// `Arc<str>` keys: base entries are shared with the immutable image
+    /// (zero-copy seeding); new entries are cheap refcount clones.
+    files: Mutex<BTreeMap<Arc<str>, FileMeta>>,
     next_free: AtomicU64,
     version: AtomicU64,
+    /// Cached wire snapshot of the file table, rebuilt lazily when
+    /// `version` advances (snapshot_diff hot path is a refcount bump).
+    files_pack_cache: Mutex<(u64, Arc<[FileWire]>)>,
 }
 
 impl LayeredImage {
     /// Builds the file table from the base image metadata.
     pub fn new(overlay: Arc<OverlayDev>) -> Self {
+        let entries = &overlay.base_image().meta().entries;
+        // Intern the base paths once per instance so the table seeds via
+        // refcount clones instead of per-entry String copies; replica
+        // construction (pack apply) reuses the pack's Arc<str> keys
+        // directly, at refcount cost.
         let mut files = BTreeMap::new();
-        for e in &overlay.base_image().meta().entries {
+        for e in entries {
             files.insert(
-                e.path.clone(),
+                Arc::from(e.path.as_str()),
                 FileMeta {
                     first_block: e.first_block,
                     block_count: e.block_count,
@@ -53,7 +64,32 @@ impl LayeredImage {
             files: Mutex::new(files),
             next_free: AtomicU64::new(base_blocks),
             version: AtomicU64::new(0),
+            files_pack_cache: Mutex::new((u64::MAX, Arc::from(Vec::new()))),
         }
+    }
+
+    /// Builds a replica directly from a pack: constructs the file table
+    /// from the pack's own `Arc<str>` keys (refcount inserts, no per-entry
+    /// path allocation) and imports the allocator cursor. The block
+    /// import still runs through the overlay.
+    pub fn replica_from(
+        overlay: Arc<OverlayDev>,
+        pack: &crate::packdiff::DiffPack,
+    ) -> Result<Self> {
+        let files: BTreeMap<Arc<str>, FileMeta> = pack
+            .files
+            .iter()
+            .map(|fw| (fw.path.clone(), fw.meta))
+            .collect();
+        let base_blocks = overlay.base_image().block_count();
+        let image = LayeredImage {
+            overlay,
+            files: Mutex::new(files),
+            next_free: AtomicU64::new(pack.next_free.max(base_blocks)),
+            version: AtomicU64::new(0),
+            files_pack_cache: Mutex::new((0, pack.files.clone())),
+        };
+        Ok(image)
     }
 
     pub fn overlay(&self) -> &Arc<OverlayDev> {
@@ -73,7 +109,10 @@ impl LayeredImage {
 
     pub fn exists(&self, path: &str) -> bool {
         let Ok(p) = normalize(path) else { return false };
-        self.files.lock().expect("fs poisoned").contains_key(&p)
+        self.files
+            .lock()
+            .expect("fs poisoned")
+            .contains_key(p.as_str())
     }
 
     pub fn stat(&self, path: &str) -> Result<FileMeta> {
@@ -81,7 +120,7 @@ impl LayeredImage {
         self.files
             .lock()
             .expect("fs poisoned")
-            .get(&p)
+            .get(p.as_str())
             .copied()
             .ok_or(crate::Error::PathNotFound(p))
     }
@@ -93,7 +132,7 @@ impl LayeredImage {
             .files
             .lock()
             .expect("fs poisoned")
-            .get(&p)
+            .get(p.as_str())
             .copied()
             .ok_or_else(|| crate::Error::PathNotFound(p.clone()))?;
         if meta.is_dir {
@@ -113,7 +152,7 @@ impl LayeredImage {
         let p = normalize(path)?;
         {
             let files = self.files.lock().expect("fs poisoned");
-            if let Some(meta) = files.get(&p) {
+            if let Some(meta) = files.get(p.as_str()) {
                 if meta.is_dir {
                     return Err(crate::Error::NotAFile(p));
                 }
@@ -129,7 +168,12 @@ impl LayeredImage {
         let p = normalize(path)?;
         // Extract the decision under a short-lived guard; never hold the
         // file-table lock across the await below (re-entrant deadlock).
-        let meta = self.files.lock().expect("fs poisoned").get(&p).cloned();
+        let meta = self
+            .files
+            .lock()
+            .expect("fs poisoned")
+            .get(p.as_str())
+            .cloned();
         let existing = match meta {
             Some(m) if !m.is_dir => self.read_file(&p).await?,
             Some(_) => return Err(crate::Error::NotAFile(p)),
@@ -146,7 +190,7 @@ impl LayeredImage {
         if data.is_empty() {
             let first = self.alloc_extent(1);
             self.files.lock().expect("fs poisoned").insert(
-                p.to_string(),
+                Arc::from(p),
                 FileMeta {
                     first_block: first,
                     block_count: 0,
@@ -165,7 +209,7 @@ impl LayeredImage {
             self.overlay.write_block(first + i as u64, block);
         }
         self.files.lock().expect("fs poisoned").insert(
-            p.to_string(),
+            Arc::from(p),
             FileMeta {
                 first_block: first,
                 block_count: n_blocks,
@@ -181,7 +225,7 @@ impl LayeredImage {
     pub fn list_dir(&self, path: &str) -> Result<Vec<String>> {
         let p = normalize(path)?;
         let files = self.files.lock().expect("fs poisoned");
-        match files.get(&p) {
+        match files.get(p.as_str()) {
             Some(m) if m.is_dir => {}
             Some(_) => return Err(crate::Error::NotADirectory(p)),
             None if p != "/" => return Err(crate::Error::PathNotFound(p)),
@@ -214,13 +258,15 @@ impl LayeredImage {
         for seg in p.trim_matches('/').split('/') {
             cur.push('/');
             cur.push_str(seg);
-            files.entry(cur.clone()).or_insert_with(|| FileMeta {
-                first_block: 0,
-                block_count: 0,
-                size: 0,
-                mode: 0o755,
-                is_dir: true,
-            });
+            files
+                .entry(Arc::from(cur.as_str()))
+                .or_insert_with(|| FileMeta {
+                    first_block: 0,
+                    block_count: 0,
+                    size: 0,
+                    mode: 0o755,
+                    is_dir: true,
+                });
         }
         self.version.fetch_add(1, Ordering::Relaxed);
         Ok(())
@@ -234,7 +280,7 @@ impl LayeredImage {
         }
         let mut files = self.files.lock().expect("fs poisoned");
         let meta = files
-            .get(&p)
+            .get(p.as_str())
             .copied()
             .ok_or_else(|| crate::Error::PathNotFound(p.clone()))?;
         if meta.is_dir {
@@ -246,16 +292,19 @@ impl LayeredImage {
                     p
                 )));
             }
-            let victims: Vec<String> = files
+            let victims: Vec<Arc<str>> = files
                 .keys()
-                .filter(|k| k.starts_with(&prefix) || k.as_str() == p.as_str())
+                .filter(|k| {
+                    let ks: &str = k;
+                    ks.starts_with(prefix.as_str()) || ks == p.as_str()
+                })
                 .cloned()
                 .collect();
             for v in victims {
-                files.remove(&v);
+                files.remove(&*v);
             }
         } else {
-            files.remove(&p);
+            files.remove(p.as_str());
         }
         self.version.fetch_add(1, Ordering::Relaxed);
         Ok(())
@@ -263,20 +312,41 @@ impl LayeredImage {
 
     // -- pack_diff integration (working-state replication) ---------------
 
-    /// Snapshots the full working state: dirty blocks + file table + the
-    /// block allocator cursor. A replica that applies this pack observes
-    /// the same filesystem.
-    pub fn snapshot_diff(&self, epoch_ms: u64) -> crate::packdiff::DiffPack {
-        let mut pack = self.overlay.snapshot_diff(epoch_ms);
+    /// Shared wire snapshot of the file table. Rebuilt only when the
+    /// table version advanced; otherwise the cached `Arc<[FileWire]>`
+    /// is handed out by refcount (the snapshot hot path).
+    fn files_pack(&self) -> Arc<[FileWire]> {
+        let v = self.version.load(Ordering::Relaxed);
+        {
+            let cache = self.files_pack_cache.lock().expect("fs poisoned");
+            if cache.0 == v {
+                return cache.1.clone();
+            }
+        }
+        // Rebuild under the table lock (atomic view of one moment).
         let files = self.files.lock().expect("fs poisoned");
-        pack.files = files
+        let pack: Vec<FileWire> = files
             .iter()
-            .map(|(path, meta)| crate::packdiff::FileWire {
+            .map(|(path, meta)| FileWire {
                 path: path.clone(),
                 meta: *meta,
             })
             .collect();
         drop(files);
+        let pack: Arc<[FileWire]> = Arc::from(pack);
+        let mut cache = self.files_pack_cache.lock().expect("fs poisoned");
+        // A concurrent write may have bumped the version mid-rebuild; the
+        // cached entry is then simply rebuilt on the next snapshot.
+        *cache = (v, pack.clone());
+        pack
+    }
+
+    /// Snapshots the full working state: dirty blocks + file table + the
+    /// block allocator cursor. A replica that applies this pack observes
+    /// the same filesystem.
+    pub fn snapshot_diff(&self, epoch_ms: u64) -> crate::packdiff::DiffPack {
+        let mut pack = self.overlay.snapshot_diff(epoch_ms);
+        pack.files = self.files_pack();
         pack.next_free = self.next_free.load(Ordering::Relaxed);
         pack
     }
@@ -284,10 +354,11 @@ impl LayeredImage {
     /// Applies a working-state pack (blocks + metadata).
     pub fn apply_diff(&self, pack: &crate::packdiff::DiffPack) -> Result<()> {
         self.overlay.apply_diff(pack)?;
+        let new_version = self.version.fetch_add(1, Ordering::Relaxed) + 1;
         if !pack.files.is_empty() || pack.next_free > 0 {
             let mut files = self.files.lock().expect("fs poisoned");
             files.clear();
-            for fw in &pack.files {
+            for fw in pack.files.iter() {
                 files.insert(fw.path.clone(), fw.meta);
             }
             drop(files);
@@ -295,8 +366,11 @@ impl LayeredImage {
                 pack.next_free.max(self.next_free.load(Ordering::Relaxed)),
                 Ordering::Relaxed,
             );
+            // Adopt the pack's shared file-table snapshot as the current
+            // cache entry (identical content, keyed to the version this
+            // apply just published) so the next snapshot is a refcount bump.
+            *self.files_pack_cache.lock().expect("fs poisoned") = (new_version, pack.files.clone());
         }
-        self.version.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 }
