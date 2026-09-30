@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "PufferLib core, ported to Rust: episode ring replay buffer with LSTM hidden-state reset, vectorized environment pools with parallel stepping, mat-obs/flat-obs handling, GAE, an LSTM cell, a training driver, and agent sandboxes as RL environments through the Chronus data plane"
+readme = "README.md"
+keywords = ["reinforcement-learning", "pufferlib", "envpool", "gae", "lstm"]
+categories = ["science", "simulation", "algorithms"]
 
 [dependencies]
 tokio = { workspace = true }

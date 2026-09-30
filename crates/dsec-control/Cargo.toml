@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Control plane: IAM with nested project quotas, stateless REST apiserver, k-choice power-of-two placement engine with cloud bursting, node watcher with eviction and preemption, Prometheus-style metrics"
+readme = "README.md"
+keywords = ["placement", "scheduler", "iam", "orchestration", "sandbox"]
+categories = ["simulation", "algorithms", "os"]
 
 [dependencies]
 tokio = { workspace = true }

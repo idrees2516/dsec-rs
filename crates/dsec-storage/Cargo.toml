@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Storage layer: EROFS-style images with on-demand block loading, node-level LRU page cache, overlay CoW devices, pack_diff working-state replication, async prefetch pipeline, zero-copy shared regions"
+readme = "README.md"
+keywords = ["erofs", "overlay-filesystem", "snapshot", "block-cache", "pack-diff"]
+categories = ["caching", "data-structures", "os"]
 
 [dependencies]
 tokio = { workspace = true }

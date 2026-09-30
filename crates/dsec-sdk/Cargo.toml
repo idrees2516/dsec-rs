@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "libdsec port: the client SDK. DsecClient talks REST to the apiserver; Sandbox handles route exec/filesystem/http/streaming through the node's Aether data plane; SandboxPool keeps warm sandboxes ready"
+readme = "README.md"
+keywords = ["sdk", "client", "sandbox", "deepseek", "agent"]
+categories = ["api-bindings", "asynchronous"]
 
 [dependencies]
 tokio = { workspace = true }
