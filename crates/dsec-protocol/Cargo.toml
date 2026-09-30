@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Wire protocol for the Aether per-sandbox proxy: frame codec, CRC32, request/response messages, shared deterministic RNG"
+readme = "README.md"
+keywords = ["aether", "wire-protocol", "multiplexing", "sandbox", "framing"]
+categories = ["network-programming", "asynchronous"]
 
 [dependencies]
 tokio = { workspace = true }

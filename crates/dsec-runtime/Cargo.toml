@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Node-local runtime: Edge lifecycle state machine, Aether per-sandbox proxy (channel + UDS transports), Chronus session API (exec/fs/http/streaming), four sandbox backends (FnCall/Container/MicroVM/FullVM), resource governance with pause-time memory reclaim"
+readme = "README.md"
+keywords = ["sandbox", "microvm", "edge-runtime", "agentic-ai", "chronus"]
+categories = ["os", "virtualization", "asynchronous"]
 
 [dependencies]
 tokio = { workspace = true }

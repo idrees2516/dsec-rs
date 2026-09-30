@@ -1,0 +1,54 @@
+name: Publish
+
+# Publishes every dsec-rs crate to crates.io in dependency order.
+# Triggered by pushing a v* tag (e.g. `git tag v0.3.0 && git push --tags`).
+#
+# Requires the repository secret `CARGO_REGISTRY_TOKEN` — a crates.io
+# publish token (create at https://crates.io/settings/tokens, scope
+# "publish-new"). See docs/publishing.md.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  publish:
+    name: Publish (crates.io)
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Quality gates (fmt + clippy + tests)
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+      # Dependency order matters: crates.io resolves version deps at
+      # publish time, so a crate must exist before its dependents.
+      - name: Publish dsec-protocol
+        run: cargo publish -p dsec-protocol --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - name: Publish dsec-storage
+        run: cargo publish -p dsec-storage --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - name: Publish dsec-runtime
+        run: cargo publish -p dsec-runtime --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - name: Publish dsec-control
+        run: cargo publish -p dsec-control --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - name: Publish dsec-sdk
+        run: cargo publish -p dsec-sdk --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - name: Publish dsec-rl
+        run: cargo publish -p dsec-rl --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - name: Publish dsec-firecracker
+        run: cargo publish -p dsec-firecracker --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - name: Publish dsec-bench
+        run: cargo publish -p dsec-bench --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Benchmark suite: sandbox creation rate (paper target ~5k/s), 100k burst simulation, pause/resume latency, RL steps/sec vs PufferLib, pack_diff savings, placement throughput, HTTP RPS, protocol codec throughput"
+readme = "README.md"
+keywords = ["benchmark", "sandbox", "load-testing", "performance", "rl"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "dsec-bench"
