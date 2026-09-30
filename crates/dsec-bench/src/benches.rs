@@ -50,32 +50,40 @@ pub async fn creation_rate(
         .token;
     let plane = cluster.plane.clone();
     let sem = Arc::new(tokio::sync::Semaphore::new(concurrency));
-    let lat = Arc::new(std::sync::Mutex::new(Vec::<f64>::new()));
 
     let t0 = Instant::now();
     let mut tasks = Vec::with_capacity(count);
-    for i in 0..count {
+    for _ in 0..count {
         let permit = sem.clone().acquire_owned().await.unwrap();
         let plane = plane.clone();
         let token = token.clone();
-        let lat = lat.clone();
         tasks.push(tokio::spawn(async move {
             let start = now_ms();
             let spec = ControlSpec::default();
             let _ = plane.create_sandbox(&token, spec).await;
             let end = now_ms();
-            lat.lock().unwrap().push(end - start);
             drop(permit);
-            let _ = i;
+            end - start
         }));
     }
-    for t in tasks {
-        let _ = t.await;
-    }
+    // Per-task latency returned via the join handle — no shared Mutex on
+    // the creation hot path.
+    let lat: Vec<f64> = futures_join_all(tasks).await;
     let elapsed = t0.elapsed().as_secs_f64();
-    let lat: Vec<f64> = lat.lock().unwrap().clone();
-    let created = cluster.plane.registry.sandboxes().len() as f64;
+    let created = cluster.plane.registry.sandbox_count() as f64;
     (created / elapsed.max(1e-9), percentiles(&lat))
+}
+
+/// Await a batch of tasks, keeping successful values and skipping
+/// panicked tasks (mirrors the old `let _ = t.await` tolerance).
+async fn futures_join_all<T: Send + 'static>(tasks: Vec<tokio::task::JoinHandle<T>>) -> Vec<T> {
+    let mut out = Vec::with_capacity(tasks.len());
+    for t in tasks {
+        if let Ok(v) = t.await {
+            out.push(v);
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -126,7 +134,7 @@ pub async fn burst_lifecycle(count: usize, concurrency: usize) -> BurstStats {
             let spec = ControlSpec::default();
             match plane.create_sandbox(&token, spec).await {
                 Ok(rec) => {
-                    let cur = plane.registry.sandboxes().len() as u64;
+                    let cur = plane.registry.sandbox_count() as u64;
                     peak.fetch_max(cur, std::sync::atomic::Ordering::Relaxed);
                     // One real exec through the node's data plane.
                     let node = &nodes[0];
@@ -396,9 +404,12 @@ pub fn packdiff(files: usize, mutate_frac: f64, iterations: usize) -> PackdiffSt
 
     let t1 = Instant::now();
     for _ in 0..iterations {
+        // Replica construction seeds the table from the pack's shared
+        // Arc<str> keys (refcount inserts) instead of re-interning the
+        // base image's strings and immediately replacing them.
         let replica_overlay = Arc::new(OverlayDev::new(loader.clone()));
-        let replica_fs = Arc::new(LayeredImage::new(replica_overlay));
-        let _ = replica_fs.apply_diff(&pack);
+        let replica_fs = Arc::new(LayeredImage::replica_from(replica_overlay, &pack).unwrap());
+        let _ = replica_fs.overlay().apply_diff(&pack);
     }
     let applies_per_sec = iterations as f64 / t1.elapsed().as_secs_f64().max(1e-9);
 
@@ -520,6 +531,69 @@ pub async fn http_rps(requests: usize, concurrency: usize) -> f64 {
     requests as f64 / t0.elapsed().as_secs_f64().max(1e-9)
 }
 
+/// Keep-alive variant: each client pipelines many requests over ONE TCP
+/// connection (the transport a real DsecClient pool uses). Responses are
+/// framed by Content-Length, matching HTTP/1.1 persistent connections.
+pub async fn http_rps_keepalive(clients: usize, per_client: usize) -> f64 {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let cluster = spawn_local_cluster(ClusterConfig::default()).await;
+    let addr = cluster.api_addr;
+    let total = clients * per_client;
+    let t0 = Instant::now();
+    let mut tasks = Vec::new();
+    for _ in 0..clients {
+        tasks.push(tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            stream.set_nodelay(true).ok();
+            let req = format!(
+                "GET /healthz HTTP/1.1\r\nhost: {}\r\nconnection: keep-alive\r\n\r\n",
+                addr
+            );
+            // Buffered client-side framing: read chunks, carve out
+            // complete responses (header + Content-Length body) from a
+            // pending buffer. No per-byte reads.
+            let mut pending: Vec<u8> = Vec::with_capacity(4096);
+            let mut chunk = [0u8; 4096];
+            'client: for _ in 0..per_client {
+                stream.write_all(req.as_bytes()).await.unwrap();
+                loop {
+                    if let Some(consumed) = parse_http_response(&pending) {
+                        pending.drain(..consumed);
+                        break; // next request
+                    }
+                    let n = stream.read(&mut chunk).await.unwrap();
+                    if n == 0 {
+                        break 'client;
+                    }
+                    pending.extend_from_slice(&chunk[..n]);
+                }
+            }
+        }));
+    }
+    for t in tasks {
+        let _ = t.await;
+    }
+    let elapsed = t0.elapsed().as_secs_f64().max(1e-9);
+    total as f64 / elapsed
+}
+
+/// If `buf` holds one complete HTTP/1.1 response (headers + body),
+/// returns the total byte length to consume.
+fn parse_http_response(buf: &[u8]) -> Option<usize> {
+    let hdr_end = buf.windows(4).position(|w| w == b"\r\n\r\n")? + 4;
+    let head = std::str::from_utf8(&buf[..hdr_end]).ok()?;
+    let body_len: usize = head
+        .lines()
+        .find_map(|l| {
+            l.split_once(':')
+                .filter(|(k, _)| k.eq_ignore_ascii_case("content-length"))
+                .and_then(|(_, v)| v.trim().parse().ok())
+        })
+        .unwrap_or(0);
+    let total = hdr_end + body_len;
+    (buf.len() >= total).then_some(total)
+}
+
 // ---------------------------------------------------------------------------
 // 8. Protocol codec throughput
 // ---------------------------------------------------------------------------
@@ -631,6 +705,19 @@ pub async fn run_async_set(quick: bool) -> Vec<BenchResult> {
         unit: "requests/sec".into(),
         reference: Some("stateless apiserver must sustain create-rate traffic".into()),
         notes: "GET /healthz, 16 concurrent keep-alive-free clients".into(),
+        p50_ms: None,
+        p99_ms: None,
+        samples: None,
+    });
+
+    // 7b. HTTP with keep-alive pipelining (the DsecClient transport shape).
+    let ka = http_rps_keepalive(16, (1_250.0 * scale) as usize).await;
+    out.push(BenchResult {
+        name: "apiserver_rps_keepalive".into(),
+        value: ka,
+        unit: "requests/sec".into(),
+        reference: Some("stateless apiserver must sustain create-rate traffic".into()),
+        notes: "GET /healthz, 16 keep-alive connections, pipelined".into(),
         p50_ms: None,
         p99_ms: None,
         samples: None,
