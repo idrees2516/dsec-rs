@@ -2,11 +2,12 @@
 //!
 //! The paper's MicroVM backend is a Firecracker-class VMM: the default
 //! `dsec-runtime` configuration simulates it deterministically through
-//! the node's [`NodeLatencyProfile`] (the numbers the paper measures:
-//! ~900 ms cold boot, ~4 s pause/resume checkpoint cycles). This module
-//! defines the driver surface a **real** VMM implementation plugs into —
-//! the `dsec-firecracker` crate provides one that drives an actual
-//! Firecracker process over its Unix-socket API.
+//! the node's latency profile ([`dsec_storage::latency::NodeLatencyProfile`]
+//! — the numbers the paper measures: ~900 ms cold boot, ~4 s pause/resume
+//! checkpoint cycles). This module defines the driver surface a **real**
+//! VMM implementation plugs into — the `dsec-firecracker` crate provides
+//! one that drives an actual Firecracker process over its Unix-socket
+//! API.
 //!
 //! Mapping to the paper's lifecycle operations:
 //!
@@ -19,9 +20,10 @@
 //! | replica / fast resume | `PUT /snapshots/load` |
 //! | destroy | `SendCtrlAltDel` / process teardown |
 //!
-//! [`EdgeNode`] consults the driver whenever an instance carries a
-//! [`MicrovmHandle`]; with no driver installed every path behaves
-//! exactly as the latency-profile simulation (regression-tested).
+//! [`EdgeNode`](crate::edge::EdgeNode) consults the driver whenever an
+//! instance carries a [`MicrovmHandle`]; with no driver installed every
+//! path behaves exactly as the latency-profile simulation
+//! (regression-tested).
 
 use std::future::Future;
 use std::path::PathBuf;

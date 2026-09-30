@@ -9,7 +9,7 @@
 //! A dedicated multi-thread tokio runtime hosts the Aether server; env
 //! steps bridge with `Handle::block_on` from the pool's worker threads.
 //!
-//! Two execution paths share one pure state machine ([`TerminalCore`]):
+//! Two execution paths share one pure state machine (`TerminalCore`):
 //!
 //! * `EnvPool` + [`TerminalTaskEnv`] — the reference path: each env
 //!   steps through its own `call` round trip.
@@ -328,7 +328,8 @@ impl Env for TerminalTaskEnv {
 /// the wire behavior is unchanged; only the client-side issue pattern
 /// becomes pipelined.
 ///
-/// Semantics are identical to stepping the same envs through [`EnvPool`]
+/// Semantics are identical to stepping the same envs through
+/// [`EnvPool`](crate::envpool::EnvPool)
 /// (same commands, same per-env ordering, same rewards/observations) —
 /// enforced by a cross-validation regression test. Staging resets run
 /// phase-barrier pipelined: env i's line k completes before any env's

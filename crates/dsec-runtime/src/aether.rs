@@ -109,12 +109,12 @@ impl AetherWriter {
 
 /// Reader half.
 ///
-/// [`recv_many`] is the batching fast path: it drains every frame that
-/// is already deliverable in ONE wake, so a pipelined batch of N frames
-/// costs one park/unpark cycle instead of N. For the UDS transport the
-/// read side keeps a persistent buffer, so one `read` syscall can
-/// yield many frames (the write side coalesces symmetrically in
-/// [`AetherWriter::send_batch`]).
+/// [`AetherReader::recv_many`] is the batching fast path: it drains
+/// every frame that is already deliverable in ONE wake, so a pipelined
+/// batch of N frames costs one park/unpark cycle instead of N. For the
+/// UDS transport the read side keeps a persistent buffer, so one `read`
+/// syscall can yield many frames (the write side coalesces
+/// symmetrically in [`AetherWriter::send_batch`]).
 pub enum AetherReader {
     Channel(tokio::sync::mpsc::Receiver<Frame>),
     Unix {

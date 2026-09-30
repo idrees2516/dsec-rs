@@ -1,7 +1,8 @@
 //! # dsec-firecracker
 //!
 //! A **real Firecracker backend** for [dsec-rs](https://docs.rs/dsec-runtime)
-//! sandboxes, implementing dsec-runtime's [`MicrovmDriver`] trait.
+//! sandboxes, implementing dsec-runtime's
+//! [`MicrovmDriver`](dsec_runtime::microvm::MicrovmDriver) trait.
 //!
 //! What it does behind the paper's backend abstractions:
 //!
