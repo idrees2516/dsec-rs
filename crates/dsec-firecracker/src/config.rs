@@ -12,7 +12,7 @@ pub const FIRECRACKER_PATH_ENV: &str = "DSEC_FIRECRACKER_PATH";
 /// Kernel image used for every microVM boot (env: `DSEC_FC_KERNEL`).
 pub const KERNEL_PATH_ENV: &str = "DSEC_FC_KERNEL";
 
-/// Configuration for [`crate::FirecrackerDriver`](crate::FirecrackerDriver).
+/// Configuration for [`FirecrackerDriver`](crate::FirecrackerDriver).
 #[derive(Debug, Clone)]
 pub struct FirecrackerConfig {
     /// Firecracker binary (absolute or PATH-resolvable).
