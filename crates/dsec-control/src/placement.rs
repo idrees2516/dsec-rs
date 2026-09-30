@@ -91,6 +91,10 @@ impl PlacementEngine {
         nodes: &[NodeInfo],
         allow_cloud: bool,
     ) -> Result<Option<PlacementDecision>> {
+        // Single filter pass into a scratch candidate list (the predicate
+        // is the dominant cost at paper scale — never evaluate it twice),
+        // then Floyd-sampled k positions and scoring. One RNG lock covers
+        // sampling + tie-break jitter.
         let candidates: Vec<&NodeInfo> = nodes
             .iter()
             .filter(|n| n.fits(spec) && (allow_cloud || n.locality == Locality::Local))
@@ -98,22 +102,21 @@ impl PlacementEngine {
         if candidates.is_empty() {
             return Ok(None);
         }
-        // k distinct samples from the candidate list.
         let k = self.k.min(candidates.len());
-        let sampled_idx = {
+        let (sampled_idx, jitter) = {
             let mut rng = self.rng.lock().expect("placement rng poisoned");
-            rng.sample_k(candidates.len(), k)
+            // Floyd's algorithm: k distinct indices in O(k^2) — no
+            // 0..n index materialization, no partial shuffle of n slots.
+            let idx = rng.sample_k_floyd(candidates.len(), k);
+            let jit: Vec<f64> = std::iter::repeat_with(|| rng.next_f64() * 0.01)
+                .take(idx.len())
+                .collect();
+            (idx, jit)
         };
         let mut best: Option<(f64, &NodeInfo)> = None;
         // Randomized tie-breaking: a tiny seeded jitter (<= 0.01) breaks
         // exact ties between identical nodes so load spreads, while any
         // genuinely better candidate still wins by a real margin.
-        let jitter: Vec<f64> = {
-            let mut rng = self.rng.lock().expect("placement rng poisoned");
-            (0..sampled_idx.len())
-                .map(|_| rng.next_f64() * 0.01)
-                .collect()
-        };
         for (rank, &i) in sampled_idx.iter().enumerate() {
             let node = candidates[i];
             let score = self.score(spec, node) + jitter[rank];
@@ -121,13 +124,16 @@ impl PlacementEngine {
                 best = Some((score, node));
             }
         }
+        let sampled = k;
+        let candidates_len = candidates.len();
+        drop(candidates);
         self.decisions
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(best.map(|(score, node)| PlacementDecision {
             node_id: node.node_id.clone(),
             score,
-            sampled: sampled_idx.len(),
-            candidates: candidates.len(),
+            sampled,
+            candidates: candidates_len,
             burst: node.locality == Locality::Cloud,
         }))
     }
