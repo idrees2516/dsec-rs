@@ -5,7 +5,8 @@ name: Publish
 #
 # Requires the repository secret `CARGO_REGISTRY_TOKEN` — a crates.io
 # publish token (create at https://crates.io/settings/tokens, scope
-# "publish-new"). See docs/publishing.md.
+# "publish-new"). See docs/publishing.md. (Optionally create a
+# `crates-io` environment and re-add `environment:` for approvals.)
 
 on:
   push:
@@ -20,7 +21,6 @@ jobs:
   publish:
     name: Publish (crates.io)
     runs-on: ubuntu-latest
-    environment: crates-io
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
