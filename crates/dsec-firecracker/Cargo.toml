@@ -1,0 +1,23 @@
+[package]
+name = "dsec-firecracker"
+description = "Real Firecracker microVM backend for dsec-rs — drives the Firecracker VMM API (boot, pause/resume, diff snapshots) behind the dsec-runtime MicrovmDriver trait"
+readme = "README.md"
+keywords = ["firecracker", "microvm", "virtualization", "vmm", "sandbox"]
+categories = ["virtualization", "os", "api-bindings"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+dsec-runtime = { workspace = true }
+dsec-storage = { workspace = true }
+
+[dev-dependencies]
+dsec-protocol = { workspace = true }
