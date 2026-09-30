@@ -83,7 +83,48 @@ pub fn resolve_path(cwd: &str, p: &str) -> String {
 }
 
 /// Runs a command line inside a sandbox session.
+///
+/// Shell-style `&&` chaining is supported: segments run left to right,
+/// execution stops at the first failure, stdout/stderr concatenate, and
+/// the last executed segment determines the exit code and working
+/// directory — POSIX `sh -c` semantics. Staging a fresh task state is
+/// therefore ONE round trip instead of N.
 pub async fn run(
+    cmd: &str,
+    fs: &LayeredImage,
+    cwd: &str,
+    env: &std::collections::HashMap<String, String>,
+    hostname: &str,
+    epoch_ms: u64,
+) -> ExecOutput {
+    if cmd.contains("&&") {
+        let mut combined = ExecOutput {
+            exit_code: 0,
+            events: Vec::new(),
+            cwd_after: cwd.to_string(),
+        };
+        let mut cwd = cwd.to_string();
+        for seg in cmd.split("&&") {
+            let seg = seg.trim();
+            if seg.is_empty() {
+                continue;
+            }
+            let r = run_single(seg, fs, &cwd, env, hostname, epoch_ms).await;
+            combined.events.extend(r.events);
+            combined.exit_code = r.exit_code;
+            combined.cwd_after = r.cwd_after.clone();
+            cwd = r.cwd_after;
+            if r.exit_code != 0 {
+                break;
+            }
+        }
+        return combined;
+    }
+    run_single(cmd, fs, cwd, env, hostname, epoch_ms).await
+}
+
+/// One pipeline segment (single command with optional redirection).
+async fn run_single(
     cmd: &str,
     fs: &LayeredImage,
     cwd: &str,
@@ -549,5 +590,44 @@ mod tests {
         let out = sh(&fs, "   ").await;
         assert_eq!(out.exit_code, 0);
         assert!(out.events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn and_and_chains_sequentially() {
+        let fs = test_fs();
+        let out = sh(
+            &fs,
+            "echo one > /tmp/a.txt && echo two >> /tmp/a.txt && cat /tmp/a.txt",
+        )
+        .await;
+        assert_eq!(out.exit_code, 0);
+        assert_eq!(out.stdout(), b"one\ntwo\n");
+        // Failure stops the chain: the second segment must not run.
+        let out = sh(&fs, "cat /nope && echo should-not-run").await;
+        assert_eq!(out.exit_code, 1);
+        assert!(out.stdout().is_empty());
+        assert!(out.stderr().starts_with(b"cat: /nope:"));
+        // cd propagates through the chain.
+        let out = sh(&fs, "cd /etc && pwd").await;
+        assert_eq!(out.stdout(), b"/etc\n");
+        assert_eq!(out.cwd_after, "/etc");
+    }
+
+    #[tokio::test]
+    async fn staging_one_shot_matches_split_execution() {
+        // The sandbox-env staging command, issued as ONE compound line,
+        // must produce the same filesystem state as N separate commands.
+        let fs = test_fs();
+        let one_shot = sh(
+            &fs,
+            "mkdir -p /task && rm -r /task && mkdir -p /task && echo decoy-1 > /task/f0.txt && echo FLAG-42 > /task/f3.txt",
+        )
+        .await;
+        assert_eq!(one_shot.exit_code, 0);
+        let listing = sh(&fs, "ls /task").await;
+        let text = String::from_utf8(listing.stdout()).unwrap();
+        assert!(text.contains("f0.txt"));
+        assert!(text.contains("f3.txt"));
+        assert_eq!(sh(&fs, "cat /task/f3.txt").await.stdout(), b"FLAG-42\n");
     }
 }

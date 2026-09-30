@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use crate::buffer::ReplayBuffer;
-use crate::envpool::EnvPool;
+use crate::envpool::Stepping;
 use crate::error::Result;
 use crate::lstm::LstmCell;
 use crate::spaces::Action;
@@ -54,7 +54,9 @@ pub struct RolloutStats {
 }
 
 pub struct Driver {
-    pub pool: EnvPool,
+    /// The env pool (any [`Stepping`] implementation — the sync
+    /// [`EnvPool`] or the pipelined sandbox batch pool).
+    pub pool: Box<dyn Stepping>,
     pub buffer: ReplayBuffer,
     policy: Arc<PolicyFn>,
     lstm: Option<LstmCell>,
@@ -86,8 +88,10 @@ pub struct Driver {
 }
 
 impl Driver {
+    /// `pool` accepts any [`Stepping`] pool — pass the sync [`EnvPool`]
+    /// or the pipelined sandbox batch pool (`Box::new(pool)`).
     pub fn new(
-        pool: EnvPool,
+        pool: Box<dyn Stepping>,
         buffer: ReplayBuffer,
         policy: Arc<PolicyFn>,
         cfg: DriverConfig,

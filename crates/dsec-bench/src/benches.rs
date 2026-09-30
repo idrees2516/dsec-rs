@@ -313,13 +313,14 @@ pub fn rl_driver(num_envs: usize, workers: usize, steps: u64, hidden: usize) -> 
             .map(|o| Action::Discrete(((*o * 97.0) as i64).rem_euclid(8)))
             .collect::<Vec<Action>>()
     });
-    let mut driver = Driver::new(pool, buffer, policy, Default::default(), 7);
+    let mut driver = Driver::new(Box::new(pool), buffer, policy, Default::default(), 7);
     let stats = driver.rollout(steps).unwrap();
     driver.finish_phase();
     stats.steps_per_sec
 }
 
-/// Sandbox-backed env stepping (real Chronus data plane per step).
+/// Sandbox-backed env stepping (real Chronus data plane per step) — the
+/// reference per-env path (one `call` round trip per env step).
 pub fn rl_sandbox_steps(num_envs: usize, steps: u64) -> f64 {
     use dsec_rl::sandbox_env::SandboxEnvBuilder;
     let builder = SandboxEnvBuilder::new(13);
@@ -332,6 +333,25 @@ pub fn rl_sandbox_steps(num_envs: usize, steps: u64) -> f64 {
             .map(|i| Action::Discrete((i % 6) as i64))
             .collect();
         let _ = pool.step_parallel(&actions).unwrap();
+    }
+    let elapsed = t0.elapsed().as_secs_f64();
+    (steps as f64 * num_envs as f64) / elapsed.max(1e-9)
+}
+
+/// Sandbox-backed env stepping through the pipelined batch pool: every
+/// vectorized step is ONE coalesced Aether transmission awaited under a
+/// single deadline (one wakeup chain + one timer per tick).
+pub fn rl_sandbox_steps_batched(num_envs: usize, steps: u64) -> f64 {
+    use dsec_rl::sandbox_env::SandboxEnvBuilder;
+    let builder = SandboxEnvBuilder::new(13);
+    let mut pool = builder.build_batch_pool(num_envs, 13).unwrap();
+    pool.reset_all();
+    let t0 = Instant::now();
+    for _ in 0..steps {
+        let actions: Vec<Action> = (0..num_envs)
+            .map(|i| Action::Discrete((i % 6) as i64))
+            .collect();
+        let _ = pool.step_all(&actions).unwrap();
     }
     let elapsed = t0.elapsed().as_secs_f64();
     (steps as f64 * num_envs as f64) / elapsed.max(1e-9)
@@ -782,12 +802,25 @@ pub fn run_sync_set(quick: bool) -> Vec<BenchResult> {
         samples: None,
     });
 
+    let sandbox_batched = rl_sandbox_steps_batched(8, (10_000.0 * scale) as u64);
+    out.push(BenchResult {
+        name: "rl_env_steps_sandbox_batched".into(),
+        value: sandbox_batched,
+        unit: "steps/sec".into(),
+        reference: Some("DSec: RL agent loop over real sandbox sessions".into()),
+        notes: "8 sandbox envs, pipelined: one coalesced Aether transmission per vectorized step"
+            .into(),
+        p50_ms: None,
+        p99_ms: None,
+        samples: None,
+    });
+
     let sandbox_steps = rl_sandbox_steps(8, (2_000.0 * scale) as u64);
     out.push(BenchResult {
         name: "rl_env_steps_sandbox".into(),
         value: sandbox_steps,
         unit: "steps/sec".into(),
-        reference: Some("DSec: RL agent loop over real sandbox sessions".into()),
+        reference: Some("reference per-env path (one round trip per step)".into()),
         notes: "8 sandbox envs, real Chronus exec per step (zero-latency channel transport)".into(),
         p50_ms: None,
         p99_ms: None,

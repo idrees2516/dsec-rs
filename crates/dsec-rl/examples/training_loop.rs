@@ -44,7 +44,7 @@ fn main() {
             .collect::<Vec<Action>>()
     });
 
-    let mut driver = Driver::new(pool, buffer, policy, DriverConfig::default(), 42);
+    let mut driver = Driver::new(Box::new(pool), buffer, policy, DriverConfig::default(), 42);
 
     // 4. Rollout phases.
     for phase in 1..=3 {
