@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::chronus::Chronus;
+use crate::microvm::{MicrovmDriver, MicrovmHandle};
 use crate::resource::{ResourceRequest, SandboxGovernor};
 use crate::state::{SandboxState, StateCell};
 use dsec_storage::latency::NodeLatencyProfile;
@@ -68,7 +69,6 @@ impl Default for SandboxSpec {
 }
 
 /// A running sandbox: guest state + lifecycle cell + governor.
-#[derive(Debug)]
 pub struct BackendInstance {
     pub sid: u64,
     pub kind: BackendKind,
@@ -79,6 +79,26 @@ pub struct BackendInstance {
     /// Overlay device (for pack_diff / replication).
     pub overlay: Arc<dsec_storage::overlay::OverlayDev>,
     pub hostname: String,
+    /// Live microVM handle when the sandbox runs on a real VMM driver
+    /// (None = simulated guest; the latency profile models the VMM).
+    pub vm: Option<MicrovmHandle>,
+    /// Driver shared with the factory (used by pause/resume/destroy
+    /// when `vm` is set). Not `Debug` (object-safe trait object).
+    pub vm_driver: Option<Arc<dyn MicrovmDriver>>,
+}
+
+impl std::fmt::Debug for BackendInstance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BackendInstance")
+            .field("sid", &self.sid)
+            .field("kind", &self.kind)
+            .field("state", &self.state.get())
+            .field("created_epoch_ms", &self.created_epoch_ms)
+            .field("hostname", &self.hostname)
+            .field("vm", &self.vm)
+            .field("vm_driver", &self.vm_driver.as_ref().map(|d| d.name()))
+            .finish_non_exhaustive()
+    }
 }
 
 impl BackendInstance {
@@ -120,6 +140,10 @@ pub struct BackendFactory {
     pools: Mutex<HashMap<String, Vec<Prepared>>>,
     pool_hits: AtomicU64,
     pool_misses: AtomicU64,
+    /// Optional real-VMM driver for MicroVM sandboxes (paper: Firecracker).
+    /// When set, MicroVM creation boots through the driver instead of
+    /// sleeping the latency profile.
+    microvm_driver: Option<Arc<dyn MicrovmDriver>>,
 }
 
 impl BackendFactory {
@@ -135,7 +159,20 @@ impl BackendFactory {
             pools: Mutex::new(HashMap::new()),
             pool_hits: AtomicU64::new(0),
             pool_misses: AtomicU64::new(0),
+            microvm_driver: None,
         }
+    }
+
+    /// Installs a real microVM driver (e.g. dsec-firecracker's).
+    pub fn with_microvm_driver(mut self, driver: Arc<dyn MicrovmDriver>) -> Self {
+        self.microvm_driver = Some(driver);
+        self
+    }
+
+    /// The installed microVM driver, if any (EdgeNode uses it for
+    /// pause/resume/destroy of driver-backed instances).
+    pub fn microvm_driver(&self) -> Option<&Arc<dyn MicrovmDriver>> {
+        self.microvm_driver.as_ref()
     }
 
     pub fn registry(&self) -> &Arc<dsec_storage::erofs::ImageRegistry> {
@@ -211,10 +248,22 @@ impl BackendFactory {
             None
         };
 
+        let mut vm_handle: Option<MicrovmHandle> = None;
+        let mut vm_driver_out: Option<Arc<dyn MicrovmDriver>> = None;
         match spec.backend {
             BackendKind::Fncall => Self::sleep(&self.latencies.fncall_create).await,
             BackendKind::Container => Self::sleep(&self.latencies.container_create).await,
-            BackendKind::Microvm => Self::sleep(&self.latencies.microvm_create).await,
+            BackendKind::Microvm => {
+                if let Some(driver) = &self.microvm_driver {
+                    // Real VMM boot replaces the simulated latency — the
+                    // measured boot IS the latency.
+                    let handle = driver.boot(sid, spec).await?;
+                    vm_handle = Some(handle);
+                    vm_driver_out = Some(driver.clone());
+                } else {
+                    Self::sleep(&self.latencies.microvm_create).await;
+                }
+            }
             BackendKind::Fullvm => Self::sleep(&self.latencies.fullvm_create).await,
         }
 
@@ -270,6 +319,8 @@ impl BackendFactory {
             chronus,
             overlay,
             hostname,
+            vm: vm_handle,
+            vm_driver: vm_driver_out,
         }))
     }
 }

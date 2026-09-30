@@ -79,13 +79,42 @@ impl EdgeNode {
         seed: u64,
     ) -> Self {
         let _ = seed; // latency profiles carry their own seeds
+        Self::with_factory_parts(
+            node_id,
+            BackendFactory::new(registry, latencies, 8),
+            cpu_millicores,
+            mem_mib,
+            max_sandboxes,
+        )
+    }
+
+    /// Builds a node from a pre-configured factory — the injection
+    /// point for real VMM drivers
+    /// (`factory.with_microvm_driver(Arc::new(FirecrackerDriver::...))`).
+    pub fn with_factory(
+        node_id: String,
+        factory: BackendFactory,
+        cpu_millicores: i64,
+        mem_mib: i64,
+        max_sandboxes: i64,
+    ) -> Self {
+        Self::with_factory_parts(node_id, factory, cpu_millicores, mem_mib, max_sandboxes)
+    }
+
+    fn with_factory_parts(
+        node_id: String,
+        factory: BackendFactory,
+        cpu_millicores: i64,
+        mem_mib: i64,
+        max_sandboxes: i64,
+    ) -> Self {
         let epoch_base = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         EdgeNode {
             node_id,
-            factory: BackendFactory::new(registry, latencies, 8),
+            factory,
             pool: crate::resource::ResourcePool::new(cpu_millicores, mem_mib, max_sandboxes),
             sandboxes: RwLock::new(HashMap::new()),
             next_sid: AtomicU64::new(1),
@@ -261,13 +290,22 @@ impl EdgeNode {
     }
 
     /// Pauses a Ready sandbox: checkpoint latency + memory reclaim.
+    ///
+    /// Driver-backed instances (real Firecracker microVMs) pause through
+    /// the VMM's real API — `PATCH /vm {"state":"Paused"}` — with no
+    /// simulated sleep; the measured wall time is the true checkpoint
+    /// window.
     pub async fn pause(&self, sid: u64) -> crate::Result<PauseOutcome> {
         let entry = self.lookup(sid).ok_or(crate::Error::SandboxNotFound(sid))?;
         entry.instance.state.transition(sid, SandboxState::Paused)?;
         let t0 = std::time::Instant::now();
-        let d = self.factory.latencies().pause.sample();
-        if !d.is_zero() {
-            tokio::time::sleep(d).await;
+        if let (Some(driver), Some(vm)) = (&entry.instance.vm_driver, &entry.instance.vm) {
+            driver.pause(vm).await?;
+        } else {
+            let d = self.factory.latencies().pause.sample();
+            if !d.is_zero() {
+                tokio::time::sleep(d).await;
+            }
         }
         let reclaimed_mib = self.pool.pause_reclaim(&entry.spec.resources);
         self.stats.pauses.fetch_add(1, Ordering::Relaxed);
@@ -286,13 +324,20 @@ impl EdgeNode {
 
     /// Resumes a Paused sandbox: restore latency + MADV_WILLNEED-style
     /// prefetch of the overlay's dirty blocks.
+    ///
+    /// Driver-backed instances resume through the VMM's real API —
+    /// `PATCH /vm {"state":"Resumed"}`.
     pub async fn resume(&self, sid: u64) -> crate::Result<()> {
         let entry = self.lookup(sid).ok_or(crate::Error::SandboxNotFound(sid))?;
         entry.instance.state.transition(sid, SandboxState::Ready)?;
         let t0 = std::time::Instant::now();
-        let d = self.factory.latencies().resume.sample();
-        if !d.is_zero() {
-            tokio::time::sleep(d).await;
+        if let (Some(driver), Some(vm)) = (&entry.instance.vm_driver, &entry.instance.vm) {
+            driver.resume(vm).await?;
+        } else {
+            let d = self.factory.latencies().resume.sample();
+            if !d.is_zero() {
+                tokio::time::sleep(d).await;
+            }
         }
         // MADV_WILLNEED: fault back the blocks the sandbox dirtied.
         let dirty = entry.instance.overlay.dirty_blocks();
@@ -321,8 +366,13 @@ impl EdgeNode {
     }
 
     /// Destroys a sandbox and returns its resources.
+    ///
+    /// Driver-backed instances tear down their real VMM first.
     pub async fn destroy(&self, sid: u64) -> crate::Result<()> {
         let entry = self.lookup(sid).ok_or(crate::Error::SandboxNotFound(sid))?;
+        if let (Some(driver), Some(vm)) = (&entry.instance.vm_driver, &entry.instance.vm) {
+            let _ = driver.destroy(vm).await;
+        }
         let state = entry.instance.state.get();
         if state != SandboxState::Destroying {
             entry
