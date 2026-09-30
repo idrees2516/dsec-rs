@@ -11,10 +11,11 @@ userspace simulation that builds and runs anywhere — no root, no containers,
 no Firecracker, fully reproducible (seeded latency + PRNG).
 
 [![CI](https://github.com/idrees2516/dsec-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/idrees2516/dsec-rs/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/dsec-runtime.svg)](https://crates.io/crates/dsec-runtime)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](Cargo.toml)
-[![Tests](https://img.shields.io/badge/tests-161%20passing-brightgreen)](#running-the-tests)
-[![LOC](https://img.shields.io/badge/lines%20of%20Rust-~13k-blueviolet)](crates)
+[![Tests](https://img.shields.io/badge/tests-192%20passing-brightgreen)](#running-the-tests)
+[![LOC](https://img.shields.io/badge/lines%20of%20Rust-~15k-blueviolet)](crates)
 
 ---
 
@@ -50,7 +51,8 @@ multiplexing over UDS/vsock-style transports into per-node Edge runtimes).
 | [`dsec-runtime`](crates/dsec-runtime)   | Edge lifecycle state machine, Aether server/client (channel + UDS transports), Chronus sessions (exec / fs / http / streaming), four backends (FnCall pool, Container, MicroVM, FullVM), resource governance with pause-time reclaim | Edge, Aether, Chronus, sandbox backends                |
 | [`dsec-control`](crates/dsec-control)   | IAM with nested project quotas, versioned registry + event log, k-choice placement engine with cloud bursting, heartbeat watcher with eviction + preemption, REST apiserver (axum), Prometheus metrics, rate limiting | apiserver, IAM, Placement Engine, Watcher              |
 | [`dsec-sdk`](crates/dsec-sdk)           | **libdsec port**: `DsecClient`, `Sandbox` (execute/filesystem/http/streams/pause/resume), `SandboxPool`, retry with backoff, channel+UDS transports, full-stack `LocalCluster` assembly | libdsec                                                |
-| [`dsec-rl`](crates/dsec-rl)             | **PufferLib core port**: episode ring replay buffer with LSTM hidden-state reset, vectorized env pools (parallel stepping), mat-obs/flat-obs, GAE, LSTM cell, training driver, agent sandboxes as RL envs | RL co-design layer                                     |
+| [`dsec-rl`](crates/dsec-rl)             | **PufferLib core port**: episode ring replay buffer with LSTM hidden-state reset, vectorized env pools (parallel stepping, pipelined batch pool), mat-obs/flat-obs, GAE, LSTM cell, training driver, agent sandboxes as RL envs | RL co-design layer                                     |
+| [`dsec-firecracker`](crates/dsec-firecracker) | **Real Firecracker microVM backend** behind the `MicrovmDriver` trait: VMM process launch + API socket, machine config from the sandbox spec, shared read-only rootfs + scratch drives, real pause/resume, diff snapshots (pack_diff analogue), snapshot restore, graceful destroy; fake-VMM test harness over real UDS | MicroVM backend (Firecracker)                          |
 | [`dsec-bench`](crates/dsec-bench)       | Benchmark suite: creation rate vs the paper's ~5k/s, 100k burst, pause/resume latency, RL steps/sec vs PufferLib, pack_diff savings, placement throughput/quality, HTTP RPS, codec throughput | —                                                      |
 
 ## Quick start
@@ -110,7 +112,8 @@ raw logs: [`docs/benchmarks.md`](docs/benchmarks.md)):
 | RL vectorized envs (A/B: 2.4x) | **1.42M steps/s** | PufferLib ~1M+/s (Cython) |
 | GAE (A/B: 5.2x) | **117M transitions/s** | C-path in pufferlib train() |
 | replay buffer enqueue | 6.3M transitions/s | PufferReplayBuffer ~10M+/s |
-| sandbox-env RL (real exec per step, A/B: 1.12x) | 18.9k steps/s | — |
+| sandbox-env RL, pipelined (A/B: 2.5x vs 0.1 base) | **~35k steps/s** | — |
+| sandbox-env RL, per-env reference (A/B: 1.45x) | 28.8k steps/s | — |
 | pack_diff snapshot (A/B: 183x) | **8.9M packs/s** | replicate working state w/o full copy |
 | pack_diff apply (A/B: 4.1x) | **34.9k applies/s** | — |
 | pack_diff size ratio | **0.05x** full image | replicate working state w/o full copy |

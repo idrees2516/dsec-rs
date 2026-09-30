@@ -200,3 +200,110 @@ kept for continuity.
 - Concurrency-sensitive tests are run repeatedly in CI; the env-pool soak
   test asserts per-env step counters and action echoes every step for 200
   steps across 4 workers.
+
+---
+
+# v0.3.0 campaign — the sandbox-env data plane (flamegraph-driven)
+
+The one path the v0.2 campaign left on the table: `rl_env_steps_sandbox`
+(real Chronus exec per step) improved only 1.12x because it is
+**I/O-bound** in the async transport, not CPU-bound. This section records
+the v0.3 pass: profile first, then fix what the profile actually shows.
+
+## 10. Evidence: profiling the sandbox-env path
+
+`dsec-profiling` (new, unpublished crate) runs the exact bench workload
+under a SIGPROF sampler (`pprof`, no `perf`/privileges needed) and
+reports aggregate data-plane timing via new `AetherClient::call_stats`
+counters.
+
+Baseline (v0.2, 8 envs, 4 pool workers):
+
+```
+steps/s:            19,769      ticks: 9,918 / 4.00 s
+data-plane calls:   186,880     avg call latency: 43.5 us
+call-time share:    25.3% of per-env worker wall time (= 2.02 cores busy waiting)
+```
+
+The flamegraph stacks were dominated by kernel/scheduler time, not
+business logic: `syscall` (futex parks) under the Aether reader tasks,
+`epoll_wait` under the tokio io driver, `__write` under
+`mio::Waker::wake` (eventfd writes from `Unparker::unpark`), and `park`
+under `Handle::block_on` inside `TerminalTaskEnv::exec`. Textbook
+scheduler-bound transport: every step paid a full wakeup chain
+(env worker → channel → server reader → spawned task → reply channel →
+client reader → oneshot → unpark).
+
+The decisive control experiment: a server-side micro-bench
+(`dsec-profiling exec_cost`) calling `EdgeNode::handle_aether_request`
+directly — no transport — measured **2.12 us per exec** (JSON decode +
+interpreter + FS + JSON encode). With ~20 us amortized per exec on the
+full path, **~90% of the sandbox-env cost was transport overhead**, not
+exec work. (Server-side pure capacity: ~470k execs/s on one core.)
+
+## 11. Fixes
+
+### 11.1 Pipelined batch calls (`AetherClient::call_batch`)
+
+Every env's exec for one vectorized tick is now issued as ONE batch:
+requests serialized and reply slots registered under ONE lock pass,
+frames sent as ONE transmission (`AetherWriter::send_batch` — for the
+UDS transport literally one `write_all` + flush for N frames), replies
+awaited under ONE deadline. Wire behavior (frames, per-request
+correlation, demux) is identical to N individual `call`s — this is the
+workload Aether's per-connection multiplexing was designed for. The
+timeout slot accounting and per-slot error propagation are
+regression-tested.
+
+### 11.2 Batch-draining reader loops (`recv_many`)
+
+Both the server connection loop and the client demux loop now drain up
+to 64 frames per wake (`Receiver::recv_many` for channels; a persistent
+read buffer for the UDS transport, so one `read` syscall yields many
+frames — symmetric with `send_batch`). A pipelined batch of N frames
+costs one park/unpark cycle on the receive side; completed calls are
+matched under one `pending`-map lock pass.
+
+### 11.3 Shell-faithful `&&` compound commands
+
+Staging a fresh episode used to cost 8 sequential exec round trips (the
+compound line was split because the interpreter was single-command).
+The interpreter now chains `&&` segments with POSIX `sh -c` semantics
+(run left to right, stop on failure, concatenate output, last exit code
+wins) — staging is ONE exec plus a readiness probe. Both env paths
+issue the same commands, so sequences stay identical.
+
+### 11.4 `BatchedSandboxEnvPool` — the pipelined env pool
+
+One pure state machine (`TerminalCore`) shared verbatim by both paths
+guarantees identical commands, RNG consumption, rewards and
+observations; `step_all` runs pure command selection, ONE pipelined
+batch, pure result folding, and phase-barrier pipelined
+`reset_if_done` staging (env i's line k completes before any env's line
+k+1 — per-env order exact, distinct sandboxes concurrent). The driver
+now takes any `Stepping` pool (`Box<dyn Stepping>`).
+
+## 12. Results (interleaved medians, 3 runs each, 2-core VM)
+
+| path | v0.2 (pre-campaign) | v0.3 | change |
+|---|---|---|---|
+| sandbox-env, pipelined batch pool | — | **~35.5k steps/s** | new path |
+| sandbox-env, per-env reference path | ~19.8k steps/s | ~28.8k steps/s | **1.45x** |
+| full-suite run (dsec-bench) | 18.9k (v0.2 recorded) | 30.8k ref / 35.1k batched | 1.6-1.9x |
+| vs. v0.1.0 base case (14.1k) | | | **2.5x** |
+
+All other suites re-measured at par or better (creation 8.3k/s software
+path, 3.0M fast steps/s, 128.7M GAE trans/s, 112.6k keep-alive RPS);
+167 → 197 tests green, 0 clippy warnings, MSRV 1.85 held.
+
+## 13. What remains (honestly)
+
+With exec at 2.12 us but ~48k execs/s aggregate on 2 cores, the
+remaining ~10x is tokio task granularity: per-exec task spawn +
+schedule + wakeups. The next structural step would be an
+inline-first-poll fast path (poll each request future once in the
+reader task; spawn only futures that actually suspend — the safe
+pattern requires a re-scheduling waker) or io_uring for the UDS
+transport. Both are protocol-preserving but were judged too risky to
+land blind in this campaign; the profile harness is in-tree to drive
+that work.

@@ -9,11 +9,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- Optional real-backend feature flags: Firecracker MicroVM (via `firecracker`
-  API), containerd, and EROFS loop-mount images.
-- 3FS-style distributed storage backend behind the `dsec-storage` trait.
-- Cloud-burst provider simulation with cost accounting dashboards.
+- Inline-first-poll fast path for Aether request handling (poll each
+  request future once in the reader task; spawn only futures that
+  actually suspend) — the next structural step past §13 of
+  `docs/performance.md`.
+- io_uring transport for the Aether UDS data plane.
+- Jailer integration (chroot/uid/cgroups) for `dsec-firecracker`.
+- containerd backend and EROFS loop-mount images behind the same
+  `MicrovmDriver`-style traits.
+- 3FS-style distributed storage backend behind the `dsec-storage` traits.
 - Fuzz targets for the Aether codec (`cargo fuzz`).
+
+## [0.3.0] - 2026-09-30
+
+### Added
+
+- **`dsec-firecracker` crate — a real Firecracker microVM backend.**
+  Implements the new `MicrovmDriver` trait: launches
+  `firecracker --api-sock`, configures machine shape from the sandbox
+  spec, attaches the EROFS image as a shared read-only rootfs drive
+  (page-cache dedup across VMs = the paper's shared image cache) plus a
+  per-VM scratch drive, and starts the instance; pause/resume use the
+  real VMM state machine; snapshots map to `PUT /snapshots/create`
+  (diff mode = the pack_diff analogue) and restore to
+  `PUT /snapshots/load`; destroy is graceful `SendCtrlAltDel` + reap.
+  Dependency-free HTTP/1.1 API client, host capability detection with
+  honest blockers (`DSEC_FIRECRACKER_PATH`, `DSEC_FC_KERNEL`), and a
+  fake VMM (`FakeVmm`) so the full request sequencing and `EdgeNode`
+  integration are tested over real unix sockets without KVM. Opt-in
+  real e2e: `DSEC_FIRECRACKER_E2E=1`.
+- **Pipelined batch data plane.** `AetherClient::call_batch` issues N
+  requests as ONE coalesced transmission (`AetherWriter::send_batch`:
+  one `write_all` for the UDS transport) awaited under ONE deadline;
+  `AetherReader::recv_many` drains whole batches per wake with a
+  persistent UDS read buffer; both reader loops complete calls under
+  one lock pass. `AetherClient::call_stats` exposes aggregate call
+  timing for I/O-boundness diagnostics.
+- **`BatchedSandboxEnvPool`** — sandbox envs stepped as one pipelined
+  tick (pure command selection → one `call_batch` → pure folding;
+  phase-barrier pipelined `reset_if_done` staging). Byte-identical
+  sequences to the per-env path, enforced by cross-validation tests.
+  The training driver now accepts any `Stepping` pool
+  (`Box<dyn Stepping>`).
+- `dsec-profiling` crate (unpublished): pprof/SIGPROF flamegraph
+  harness + server-side exec micro-bench for the sandbox-env path.
+- Chronus interpreter supports `&&` compound commands with POSIX
+  `sh -c` semantics (episode staging is one round trip, not eight).
+- `EdgeNode::with_factory` — injection point for real VMM drivers.
+
+### Changed
+
+- **Sandbox-env stepping: 14.1k (v0.1.0) / ~19k (v0.2.0) → ~35k
+  steps/s pipelined** (2.5x the base case; the per-env reference path
+  itself improved 1.45x from `&&` staging). Flamegraph evidence and the
+  full diagnosis→fix→result chain in `docs/performance.md` §10-13:
+  the path was I/O-bound (per-step wakeup chains, ~90% transport
+  overhead vs. a measured 2.12us server-side exec cost).
+- All 8 public crates are `crates.io`-publish-ready (per-crate
+  metadata, READMEs, versioned path deps) with a release workflow
+  (`.github/workflows/publish.yml`) and `docs/publishing.md`.
 
 ## [0.2.0] - 2026-09-30
 
