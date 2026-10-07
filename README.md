@@ -2,20 +2,22 @@
 
 **A deep Rust reimplementation of [DeepSeek Elastic Compute (DSec)](docs/paper-mapping.md) —
 the sandbox infrastructure for agentic RL training at scale — together with a
-Rust port of PufferLib's core.**
+Rust port of PufferLib's core and a port of the [MiMo Live RL agentic
+environments](docs/mimo-liverl.md) (HuggingFace `XiaomiMiMo/MiMo-V2.6-RL-oss`).**
 
 Built from the paper *"DeepSeek Elastic Compute (DSec): A Sandbox Infrastructure
-for Effective Agentic Training at Scale"* (DeepSeek-AI + Tsinghua, 2026):
-every component the paper describes is re-created in Rust as a deterministic
-userspace simulation that builds and runs anywhere — no root, no containers,
-no Firecracker, fully reproducible (seeded latency + PRNG).
+for Effective Agentic Training at Scale"* (DeepSeek-AI + Tsinghua, 2026) and
+the XiaomiMiMo Live RL environment stack: every component is re-created in
+Rust as a deterministic userspace simulation that builds and runs anywhere —
+no root, no containers, no Firecracker, fully reproducible (seeded latency +
+PRNG).
 
 [![CI](https://github.com/idrees2516/dsec-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/idrees2516/dsec-rs/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/dsec-runtime.svg)](https://crates.io/crates/dsec-runtime)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](Cargo.toml)
-[![Tests](https://img.shields.io/badge/tests-192%20passing-brightgreen)](#running-the-tests)
-[![LOC](https://img.shields.io/badge/lines%20of%20Rust-~15k-blueviolet)](crates)
+[![Tests](https://img.shields.io/badge/tests-269%20passing-brightgreen)](#running-the-tests)
+[![LOC](https://img.shields.io/badge/lines%20of%20Rust-~29k-blueviolet)](crates)
 
 ---
 
@@ -52,6 +54,7 @@ multiplexing over UDS/vsock-style transports into per-node Edge runtimes).
 | [`dsec-control`](crates/dsec-control)   | IAM with nested project quotas, versioned registry + event log, k-choice placement engine with cloud bursting, heartbeat watcher with eviction + preemption, REST apiserver (axum), Prometheus metrics, rate limiting | apiserver, IAM, Placement Engine, Watcher              |
 | [`dsec-sdk`](crates/dsec-sdk)           | **libdsec port**: `DsecClient`, `Sandbox` (execute/filesystem/http/streams/pause/resume), `SandboxPool`, retry with backoff, channel+UDS transports, full-stack `LocalCluster` assembly | libdsec                                                |
 | [`dsec-rl`](crates/dsec-rl)             | **PufferLib core port**: episode ring replay buffer with LSTM hidden-state reset, vectorized env pools (parallel stepping, pipelined batch pool), mat-obs/flat-obs, GAE, LSTM cell, training driver, agent sandboxes as RL envs | RL co-design layer                                     |
+| [`dsec-agentenv`](crates/dsec-agentenv) | **MiMo Live RL environments port**: the HuggingFace dataset schema (verl rows + `instance_json`, real parquet loading), two-container pod topology with MCP sidecars, rubric verifiers with the REWARD_TESTBED_CORRUPTED masking contract, multi-turn agent rollouts, fully-async GRPO + GAR + GRS Live RL training with adversarial screening, the Scale AgentEnv REST server, Repo2RL conversion, and a generic real-world environment factory | [MiMo Live RL](docs/mimo-liverl.md), Scale AgentEnv, Repo2RLEnv |
 | [`dsec-firecracker`](crates/dsec-firecracker) | **Real Firecracker microVM backend** behind the `MicrovmDriver` trait: VMM process launch + API socket, machine config from the sandbox spec, shared read-only rootfs + scratch drives, real pause/resume, diff snapshots (pack_diff analogue), snapshot restore, graceful destroy; fake-VMM test harness over real UDS | MicroVM backend (Firecracker)                          |
 | [`dsec-bench`](crates/dsec-bench)       | Benchmark suite: creation rate vs the paper's ~5k/s, 100k burst, pause/resume latency, RL steps/sec vs PufferLib, pack_diff savings, placement throughput/quality, HTTP RPS, codec throughput | —                                                      |
 
@@ -69,6 +72,9 @@ Run the examples (each exercises a full stack slice):
 ```bash
 cargo run --release -p dsec-sdk --example control_plane_demo   # IAM -> quota -> REST -> exec -> cross-node packdiff -> pause -> stream -> pool
 cargo run --release -p dsec-rl --example training_loop         # sandbox envs + replay buffer + LSTM reset (0 violations)
+cargo run -p dsec-agentenv --example envgen_zoo                  # Live RL env factory: compile + boot + rollout + grade every domain template
+cargo run -p dsec-agentenv --features server --example live_pipeline   # the AgentEnv REST server, driven end-to-end over HTTP
+cargo run -p dsec-agentenv --features parquet --example real_dataset . # load the REAL HuggingFace MiMo-V2.6-RL-oss parquet shards
 cargo run --release -p dsec-sdk --example burst_simulation     # 100k sandbox lifecycles
 ```
 
@@ -81,7 +87,8 @@ UDS transports, and RL invariants (episode contiguity, LSTM reset-on-done,
 GAE correctness vs a naive reference):
 
 ```bash
-cargo test --workspace                       # everything
+cargo test --workspace                       # everything (261)
+cargo test -p dsec-agentenv --features server,parquet  # + the REST/parquet-gated suites (269 total)
 cargo test -p dsec-storage packdiff          # one area
 cargo nextest run                            # if you prefer nextest
 ```
@@ -182,10 +189,12 @@ language mapping and the integration points a real deployment would use.
 ```
 crates/
   dsec-protocol/  dsec-storage/  dsec-runtime/  dsec-control/
-  dsec-sdk/       dsec-rl/       dsec-bench/
+  dsec-sdk/       dsec-rl/       dsec-agentenv/  dsec-firecracker/
+  dsec-bench/
 docs/
   architecture.md            component deep-dive
   paper-mapping.md           paper claim -> code artifact map
+  mimo-liverl.md             MiMo Live RL -> dsec-agentenv artifact map
   benchmarks.md              full benchmark logs
   DSec_Rust_Reimplementation_Report.pdf   ~8k-word research report
 .github/

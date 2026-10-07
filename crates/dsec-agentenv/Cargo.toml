@@ -1,0 +1,58 @@
+[package]
+name = "dsec-agentenv"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Agentic RL environment harness: a Rust port of the MiMo Live RL training environments (HuggingFace XiaomiMiMo/MiMo-V2.6-RL-oss) — dataset rows, two-container pod topology with MCP sidecars, rubric verifiers with the REWARD_TESTBED_CORRUPTED masking contract, multi-turn agent rollouts, async GRPO group training with GRS/GAR anti-reward-hacking, an AgentEnv REST server, Repo2RL conversion, and a generic real-world environment factory"
+readme = "README.md"
+keywords = ["agentic-rl", "live-rl", "mcp", "environment", "reinforcement-learning"]
+categories = ["science", "simulation", "asynchronous"]
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+axum = { workspace = true, optional = true }
+
+[features]
+default = []
+# HTTP AgentEnv server (axum). The server is the only reason axum is needed;
+# the library core (dataset, pods, MCP, verifiers, agent loop, trainer) is
+# dependency-light without it.
+server = ["axum"]
+# Read the real HuggingFace parquet files (arrow-based, heavier dependency).
+parquet = ["dep:parquet", "dep:arrow"]
+
+[dependencies.parquet]
+version = "53"
+optional = true
+default-features = false
+features = ["arrow", "snap"]
+
+[dependencies.arrow]
+version = "53"
+optional = true
+default-features = false
+features = ["json"]
+
+[dev-dependencies]
+tokio = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+http = "1"
+
+[[example]]
+name = "real_dataset"
+required-features = ["parquet"]
+
+[[example]]
+name = "live_pipeline"
+required-features = ["server"]
+
+[[test]]
+name = "live_pipeline"
+required-features = ["server"]
