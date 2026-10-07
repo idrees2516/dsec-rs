@@ -19,6 +19,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MicrovmDriver`-style traits.
 - 3FS-style distributed storage backend behind the `dsec-storage` traits.
 - Fuzz targets for the Aether codec (`cargo fuzz`).
+- A real LLM-judge adapter for `dsec-agentenv` verifiers (the
+  `AnchorJudge` stands in today) and a socket MCP transport behind the
+  same `McpTransport` trait.
+
+## [0.4.0] - 2026-10-08
+
+### Added
+
+- **`dsec-agentenv` crate — the MiMo Live RL agentic environment
+  harness, ported from the HuggingFace dataset
+  `XiaomiMiMo/MiMo-V2.6-RL-oss` and its verl-side harness.** Everything
+  runs as a deterministic userspace simulation — no Docker, no root,
+  fully reproducible:
+  - **Dataset layer**: the verl row schema (`prompt` / `data_source` /
+    `ability` / `agent_name` / `reward_model` / `extra_info`) with the
+    string-typed `instance_json` expansion, legacy no-`role` prompt
+    turns, JSONL shards, the five domain presets, and a
+    `build_parquet.py`-parity row builder. The optional `parquet`
+    feature loads the REAL HuggingFace shards (arrow/parquet, row counts
+    cross-checked: code 2698, cyber 1000, music 1000, webdev 2093,
+    general 989).
+  - **Environment layer**: `manifest.json` (uploads / setup /
+    wait_ports / mcp_servers / verifier) with the upstream default
+    synthesis and hard invariants; the two-container pod (`main` +
+    `sidecar`) with RW/RO volumes, longest-prefix mounts, the simulated
+    shell subset, MCP port lifecycle (39101+i in tool enumeration
+    order), session logs, and workspace source protection — DB isolation
+    is physical: `/work/system` does not resolve in the agent's
+    namespace.
+  - **State layer**: the `system/<mcp>/state.db` model as in-process
+    relational stores (schemas, CRUD with UNIQUE/PK-immutability,
+    mutation accounting, `post_state` snapshots).
+  - **MCP layer**: JSON-RPC 2.0 envelopes, `initialize` / `tools/list` /
+    `tools/call`, OpenAI function-schema conversion, `isError` result
+    semantics, and an in-process transport with wire-identical
+    envelopes.
+  - **Verifier layer**: the `verifier_meta.json` rubric schema (rule +
+    llm items, weights, gates), the `run_verify.py`-equivalent engine
+    (VERIFY_DETERMINISTIC / VERIFY_AGENT_JUDGE filtering, weighted
+    scoring, the auto `src_protect` source-conservation gate), the judge
+    contract (deterministic `AnchorJudge`, injectable
+    `UnavailableJudge`), `reward.json` / `reward_detail.json` emission,
+    and the **REWARD_TESTBED_CORRUPTED masking contract end to end**:
+    task failures and testbed failures are never conflated — broken
+    environments are masked out of training instead of scored zero.
+  - **Agent loop**: multi-turn rollouts with the append-only transcript,
+    ordered tool dispatch, observation truncation, step limits, response
+    budgets, and the `tool_exception` vs `transport_error` taxonomy
+    (upstream infra categories preserved as strings).
+  - **Live RL trainer**: fully-asynchronous GRPO group rollouts (tokio
+    JoinSet, bounded concurrency, one fresh pod per rollout, per-(row,
+    member) deterministic seeds), group-relative advantages with masked
+    rollouts excluded from the statistics, **GAR** (mass-conservative
+    advantage redistribution toward higher-quality passing solutions),
+    **GRS** (offline rubric synthesis from contrasting rollouts),
+    adversarial screening (zero-tool full scores, cross-judge verifier
+    disagreement), and the aligned-RL self-correction cold-start
+    generator.
+  - **Environment factory**: one declarative `EnvSpec` (plain JSON)
+    compiles into a bootable environment (systems, CRUD tool surface,
+    workspace, rubric, manifest); seeded variant generation scales money
+    literals consistently across instructions/rows/needles and appends
+    distractor rows; domain templates for knowledge work, terminal /
+    computer use, and webdev.
+  - **Repo2RL pipeline**: commit mining (merge/bot filtering, test+source
+    requirement, diff caps), task synthesis, golden/test patch
+    separation, the test-driven verifier, and verl row emission —
+    repositories become environments.
+  - **AgentEnv REST server** (feature `server`, axum): the Scale
+    AgentEnv env-server contract — create / list / info / observe /
+    tool-call / reset / verify / destroy — with masked verifications
+    reporting `reward/testbed_corrupted` instead of a false zero.
+- **Docs**: `docs/mimo-liverl.md` maps every upstream component to its
+  artifact with literal/modeled mode markers, same style as
+  `paper-mapping.md`.
+
+### Changed
+
+- Workspace version bumped to 0.4.0; new crate `dsec-agentenv` in the
+  workspace, CI matrix, and README crate table (269 tests total, ~29k
+  lines of Rust).
 
 ## [0.3.0] - 2026-09-30
 

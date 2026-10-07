@@ -173,14 +173,14 @@ fn main() {
                     .frames
                     .last()
                     .and_then(|syms| syms.last())
-                    .map(&sym_name)
+                    .map(sym_name)
                     .unwrap_or_else(|| "?".into());
                 *leaves.entry(leaf).or_default() += *count;
                 let stack = frames
                     .frames
                     .iter()
                     .rev()
-                    .map(|syms| syms.last().map(&sym_name).unwrap_or_else(|| "?".into()))
+                    .map(|syms| syms.last().map(sym_name).unwrap_or_else(|| "?".into()))
                     .collect::<Vec<_>>()
                     .join(" <- ");
                 stacks.push((*count, stack));

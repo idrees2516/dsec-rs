@@ -50,6 +50,23 @@ jobs:
       - name: Concurrency-sensitive suites (repeat)
         if: matrix.toolchain == 'stable'
         run: cargo test -p dsec-runtime
+      - name: Feature-gated suites (agentenv server + parquet)
+        if: matrix.toolchain == 'stable'
+        run: cargo test -p dsec-agentenv --features server,parquet
+
+  features:
+    name: Features (dsec-agentenv)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy with all features (warnings are errors)
+        run: cargo clippy -p dsec-agentenv --all-targets --features server,parquet -- -D warnings
+      - name: Server example smoke
+        run: cargo run -p dsec-agentenv --features server --example live_pipeline
+      - name: Environment zoo example
+        run: cargo run -p dsec-agentenv --example envgen_zoo
 
   doc:
     name: Docs
