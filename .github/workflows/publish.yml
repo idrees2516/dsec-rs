@@ -44,6 +44,8 @@ jobs:
         run: cargo publish -p dsec-sdk --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
       - name: Publish dsec-rl
         run: cargo publish -p dsec-rl --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - name: Publish dsec-agentenv
+        run: cargo publish -p dsec-agentenv --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
       - name: Publish dsec-firecracker
         run: cargo publish -p dsec-firecracker --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
       - name: Publish dsec-bench
