@@ -68,6 +68,16 @@ jobs:
       - name: Environment zoo example
         run: cargo run -p dsec-agentenv --example envgen_zoo
 
+  karotte:
+    name: Karotte pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Full pipeline example (confinement → mcp → judges → transcript)
+        run: cargo run -p dsec-karotte --example full_run
+
   doc:
     name: Docs
     runs-on: ubuntu-latest

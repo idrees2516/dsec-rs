@@ -55,6 +55,7 @@ multiplexing over UDS/vsock-style transports into per-node Edge runtimes).
 | [`dsec-sdk`](crates/dsec-sdk)           | **libdsec port**: `DsecClient`, `Sandbox` (execute/filesystem/http/streams/pause/resume), `SandboxPool`, retry with backoff, channel+UDS transports, full-stack `LocalCluster` assembly | libdsec                                                |
 | [`dsec-rl`](crates/dsec-rl)             | **PufferLib core port**: episode ring replay buffer with LSTM hidden-state reset, vectorized env pools (parallel stepping, pipelined batch pool), mat-obs/flat-obs, GAE, LSTM cell, training driver, agent sandboxes as RL envs | RL co-design layer                                     |
 | [`dsec-agentenv`](crates/dsec-agentenv) | **MiMo Live RL environments port**: the HuggingFace dataset schema (verl rows + `instance_json`, real parquet loading), two-container pod topology with MCP sidecars, rubric verifiers with the REWARD_TESTBED_CORRUPTED masking contract, multi-turn agent rollouts, fully-async GRPO + GAR + GRS Live RL training with adversarial screening, the Scale AgentEnv REST server, Repo2RL conversion, and a generic real-world environment factory | [MiMo Live RL](docs/mimo-liverl.md), Scale AgentEnv, Repo2RLEnv |
+| [`dsec-karotte`](crates/dsec-karotte) | **Karotte robust RL environments port** (preferencemodel/karotte): the `Contract` confinement tri-state with the gVisor fail-open distrust, cgroup v1/v2 student groups (`memory.max` + `swap.max=0`, `oom.group`, `cgroup.kill`), the RSS/PSS/tmpfs/SysV watchdog weigher, the fd-safe reclaim sweep, defensive submission custody (symlink/FIFO/cap refusals), regex/rubric/executable judges with `And`/`Or` short-circuit composites, the message loop with turn/time/context limits, the MCP JSON-RPC tool server, the bash/file tools with the hand-rolled unified diff, the 14-event transcript with exact wire JSON, and the Firecracker VM plan | [Karotte](docs/karotte.md)                                                |
 | [`dsec-firecracker`](crates/dsec-firecracker) | **Real Firecracker microVM backend** behind the `MicrovmDriver` trait: VMM process launch + API socket, machine config from the sandbox spec, shared read-only rootfs + scratch drives, real pause/resume, diff snapshots (pack_diff analogue), snapshot restore, graceful destroy; fake-VMM test harness over real UDS | MicroVM backend (Firecracker)                          |
 | [`dsec-bench`](crates/dsec-bench)       | Benchmark suite: creation rate vs the paper's ~5k/s, 100k burst, pause/resume latency, RL steps/sec vs PufferLib, pack_diff savings, placement throughput/quality, HTTP RPS, codec throughput | —                                                      |
 
@@ -64,7 +65,7 @@ multiplexing over UDS/vsock-style transports into per-node Edge runtimes).
 git clone https://github.com/idrees2516/dsec-rs.git
 cd dsec-rs
 cargo build --release          # ~2 min on 2 cores
-cargo test --workspace         # 161 tests: unit + integration + e2e
+cargo test --workspace         # 445 tests: unit + integration + e2e
 ```
 
 Run the examples (each exercises a full stack slice):
@@ -75,6 +76,7 @@ cargo run --release -p dsec-rl --example training_loop         # sandbox envs + 
 cargo run -p dsec-agentenv --example envgen_zoo                  # Live RL env factory: compile + boot + rollout + grade every domain template
 cargo run -p dsec-agentenv --features server --example live_pipeline   # the AgentEnv REST server, driven end-to-end over HTTP
 cargo run -p dsec-agentenv --features parquet --example real_dataset . # load the REAL HuggingFace MiMo-V2.6-RL-oss parquet shards
+cargo run -p dsec-karotte --example full_run            # the Karotte pipeline: confinement → cgroups → firewall → MCP → judges → transcript
 cargo run --release -p dsec-sdk --example burst_simulation     # 100k sandbox lifecycles
 ```
 
@@ -89,6 +91,7 @@ GAE correctness vs a naive reference):
 ```bash
 cargo test --workspace                       # everything (261)
 cargo test -p dsec-agentenv --features server,parquet  # + the REST/parquet-gated suites (269 total)
+cargo test -p dsec-karotte                             # + the Karotte pipeline (184 total)
 cargo test -p dsec-storage packdiff          # one area
 cargo nextest run                            # if you prefer nextest
 ```
@@ -189,12 +192,14 @@ language mapping and the integration points a real deployment would use.
 ```
 crates/
   dsec-protocol/  dsec-storage/  dsec-runtime/  dsec-control/
-  dsec-sdk/       dsec-rl/       dsec-agentenv/  dsec-firecracker/
+  dsec-sdk/       dsec-rl/       dsec-agentenv/  dsec-karotte/
+  dsec-firecracker/
   dsec-bench/
 docs/
   architecture.md            component deep-dive
   paper-mapping.md           paper claim -> code artifact map
   mimo-liverl.md             MiMo Live RL -> dsec-agentenv artifact map
+  karotte.md                 Karotte -> dsec-karotte artifact map
   benchmarks.md              full benchmark logs
   DSec_Rust_Reimplementation_Report.pdf   ~8k-word research report
 .github/

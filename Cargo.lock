@@ -536,6 +536,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dsec-karotte"
+version = "0.4.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "dsec-profiling"
 version = "0.4.0"
 dependencies = [
