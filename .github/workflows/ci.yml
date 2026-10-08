@@ -77,6 +77,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Full pipeline example (confinement → mcp → judges → transcript)
         run: cargo run -p dsec-karotte --example full_run
+  autoenv:
+    name: AutoEnvScaling flywheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Flywheel example (propose → validate → calibrate → train → review)
+        run: cargo run -p dsec-autoenv --example flywheel
+      - name: Flywheel integration tests
+        run: cargo test -p dsec-autoenv --test flywheel
 
   doc:
     name: Docs

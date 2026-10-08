@@ -10,6 +10,7 @@ members = [
     "crates/dsec-rl",
     "crates/dsec-agentenv",
     "crates/dsec-karotte",
+    "crates/dsec-autoenv",
     "crates/dsec-firecracker",
     "crates/dsec-bench",
 ]
@@ -43,6 +44,7 @@ dsec-sdk = { path = "crates/dsec-sdk", version = "0.4.0" }
 dsec-rl = { path = "crates/dsec-rl", version = "0.4.0" }
 dsec-agentenv = { path = "crates/dsec-agentenv", version = "0.4.0" }
 dsec-karotte = { path = "crates/dsec-karotte", version = "0.4.0" }
+dsec-autoenv = { path = "crates/dsec-autoenv", version = "0.4.0" }
 dsec-firecracker = { path = "crates/dsec-firecracker", version = "0.4.0" }
 
 [profile.release]
