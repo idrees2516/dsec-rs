@@ -110,10 +110,13 @@ cargo run -p dsec-agentenv --example envgen_zoo
 # the Live RL pipeline behind the AgentEnv REST server (real HTTP)
 cargo run -p dsec-agentenv --features server --example live_pipeline
 
-# load the REAL HuggingFace parquet shards
-curl -L -o code.parquet \
-  "https://huggingface.co/datasets/XiaomiMiMo/MiMo-V2.6-RL-oss/resolve/main/code.parquet"
-cargo run -p dsec-agentenv --features parquet --example real_dataset .
+# load the REAL HuggingFace parquet shards (all 5 splits, ~20 MB)
+bash scripts/research/mimo-samples/download.sh
+cargo run -p dsec-agentenv --features parquet --example real_dataset \
+    scripts/research/mimo-samples
+# code 2698 / cyber 1000 / music 1000 / webdev 2093 / general_train 989 rows
+# (the general split is fetched from general/train.parquet upstream and
+#  saved as general_train.parquet — the name the example probes)
 ```
 
 ## Features
