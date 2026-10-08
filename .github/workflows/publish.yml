@@ -48,6 +48,8 @@ jobs:
         run: cargo publish -p dsec-agentenv --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
       - name: Publish dsec-karotte
         run: cargo publish -p dsec-karotte --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - name: Publish dsec-autoenv
+        run: cargo publish -p dsec-autoenv --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
       - name: Publish dsec-firecracker
         run: cargo publish -p dsec-firecracker --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
       - name: Publish dsec-bench

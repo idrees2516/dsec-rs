@@ -1,0 +1,21 @@
+[package]
+name = "dsec-autoenv"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "A deep Rust implementation of the AutoEnvScaling data flywheel for terminal-agent RL (Yu et al., 2026, \"AutoEnvScaling: Automating the Data Flywheel with Terminal Agents\"): environment design as a terminal task, proposer sandboxes with the Figure-18 workspace and editable/fixed regions, Harbor task model with multi-step tasks and three-layer network policy, host admission (build + reference-solution-1.0 + no-op-fails + 13-gram decontamination + rubric review), solver-guided adaptive calibration (4-to-8 rollouts, [0.25, 0.75] band, std >= 0.1), Eq. 1/2/3 rewards with DAPO filtering and DPPO updates under a total-variation trust region, harness optimization, cold-start selection, HiL clarification tasks with Ask-F1, and cross-domain admission across seven agentic domains"
+readme = "README.md"
+keywords = ["reinforcement-learning", "agent-environments", "data-flywheel", "curriculum", "autoenvscaling"]
+categories = ["science", "simulation"]
+
+[dependencies]
+rand = "0.8"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+rand = "0.8"
