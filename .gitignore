@@ -19,3 +19,6 @@
 # Environment
 .env
 .env.*
+
+# Downloaded HuggingFace dataset shards (re-fetch via scripts/research/mimo-samples/download.sh)
+scripts/research/mimo-samples/*.parquet
