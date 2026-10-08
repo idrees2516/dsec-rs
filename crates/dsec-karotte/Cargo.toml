@@ -1,0 +1,21 @@
+[package]
+name = "dsec-karotte"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "A Rust port of the Karotte robust RL environment framework (preferencemodel/karotte): the confinement contract and firewall model, cgroup/memory-watch resource policing, the fd-safe reclaim sweep, the Task/Step/Judge scoring model with composite rubrics, the message loop with turn/time/context limits, the MCP tool server and bash/file tools, the event transcript, and the Firecracker runtime plan"
+readme = "README.md"
+keywords = ["rl-environments", "confinement", "firecracker", "mcp", "reward-hacking"]
+categories = ["science", "simulation", "asynchronous"]
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
