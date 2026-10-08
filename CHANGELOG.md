@@ -23,6 +23,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AnchorJudge` stands in today) and a socket MCP transport behind the
   same `McpTransport` trait.
 
+## [0.5.0] - 2026-10-08
+
+### Changed — repo slim-down (functionality unchanged)
+
+- **Full verification pass before and after the cleanup**: 620 tests
+  across 26 suites (unit + integration + doc), `cargo fmt --check`,
+  `clippy -D warnings`, `cargo doc -D warnings`, the benchmark
+  smoke run, and all seven example binaries (including the 100k
+  sandbox burst at 0 errors and the real HuggingFace parquet
+  dataset round-trip) — identical results on both sides.
+- **Repository size reduced ~60% (clone: 1.38 MiB → ~0.55 MiB)**:
+  - `docs/DSec_Rust_Reimplementation_Report.pdf` recompressed
+    724 KB → 236 KB (same 21 pages, text layer intact; figures
+    remain available full-resolution as the PNGs below).
+  - `docs/architecture.png` palette-quantized 320 KB → 132 KB and
+    `docs/bench_chart.png` 180 KB → 59 KB (identical dimensions).
+  - Git history rewritten to carry the compressed blobs in every
+    commit (each asset had exactly one historical version; commit
+    messages and tree contents are otherwise byte-identical).
+- **Dependency diet** (verified by `cargo machete` + usage grep):
+  removed unused `tokio` from `dsec-karotte` (pure-sync crate),
+  unused `dsec-runtime` from `dsec-bench`, and the redundant direct
+  `serde` from `dsec-firecracker` (only `serde_json` is referenced).
+- **Folded the three open dependabot bumps**: `pprof` 0.14 → 0.15
+  (which also drops the transitive `thiserror` 1.x from the lock
+  file), `actions/checkout` v4 → v7, and
+  `softprops/action-gh-release` v2 → v3; the stale dependabot
+  branches were deleted.
+- **Workspace version 0.4.0 → 0.5.0** (all 12 crates inherit via
+  `version.workspace`).
+
+### Added
+
+- **[`docs/usage.md`](docs/usage.md) — the practical adoption guide**:
+  who uses each layer (RL researchers, eval engineers, platform
+  teams), how to wire the crates into a training loop or an eval
+  harness, how to run the REST server and the examples, and the
+  integration points a real deployment would replace.
+- `crates/dsec-profiling/README.md` (the last crate without one).
+
 ## [0.4.0] - 2026-10-08
 
 ### Added

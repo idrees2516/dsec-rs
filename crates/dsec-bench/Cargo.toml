@@ -21,7 +21,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 dsec-protocol = { workspace = true }
 dsec-storage = { workspace = true }
-dsec-runtime = { workspace = true }
 dsec-control = { workspace = true }
 dsec-sdk = { workspace = true }
 dsec-rl = { workspace = true }

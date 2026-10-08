@@ -16,8 +16,8 @@ PRNG).
 [![crates.io](https://img.shields.io/crates/v/dsec-runtime.svg)](https://crates.io/crates/dsec-runtime)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](Cargo.toml)
-[![Tests](https://img.shields.io/badge/tests-269%20passing-brightgreen)](#running-the-tests)
-[![LOC](https://img.shields.io/badge/lines%20of%20Rust-~29k-blueviolet)](crates)
+[![Tests](https://img.shields.io/badge/tests-620%20passing-brightgreen)](#running-the-tests)
+[![LOC](https://img.shields.io/badge/lines%20of%20Rust-~55k%20%C2%B7%2012%20crates-blueviolet)](crates)
 
 ---
 
@@ -59,6 +59,7 @@ multiplexing over UDS/vsock-style transports into per-node Edge runtimes).
 | [`dsec-autoenv`](crates/dsec-autoenv) | **AutoEnvScaling data flywheel** (Yu et al. 2026): environment design as a terminal task — the proposer sandbox with the Figure-18 workspace (editable/fixed regions, web gating, egress rules), the complete Harbor task model (multi-step `steps/`, three-layer network policy, shared/separate verifiers, pitfalls-as-lints), host admission (build + reference-1.0 + no-op<0.5 + 13-gram decontamination + `harbor check` rubric), solver-guided calibration (4→8 rollouts, [0.25, 0.75] band, std ≥ 0.1, hinted diagnostics, ≤ 2 revisions), Eq. 1/2/3 rewards with DAPO filtering and DPPO under a TV-0.1 trust region, carry-over of unfinished trajectories, pool review every 16 updates, Continual-Harness evolution, Cold-Start selection with paired sign tests, HiL clarification tasks with Ask-F1, and cross-domain admission across seven domains | [AutoEnvScaling](docs/autoenvscaling.md) |
 | [`dsec-firecracker`](crates/dsec-firecracker) | **Real Firecracker microVM backend** behind the `MicrovmDriver` trait: VMM process launch + API socket, machine config from the sandbox spec, shared read-only rootfs + scratch drives, real pause/resume, diff snapshots (pack_diff analogue), snapshot restore, graceful destroy; fake-VMM test harness over real UDS | MicroVM backend (Firecracker)                          |
 | [`dsec-bench`](crates/dsec-bench)       | Benchmark suite: creation rate vs the paper's ~5k/s, 100k burst, pause/resume latency, RL steps/sec vs PufferLib, pack_diff savings, placement throughput/quality, HTTP RPS, codec throughput | —                                                      |
+| [`dsec-profiling`](crates/dsec-profiling) | Sampling-profiler harness for the sandbox-env stepping path: SIGPROF sampling (unprivileged), flamegraph SVG, leaf-symbol profile, Aether data-plane wall-time share (internal tool, `publish = false`) | —                                                      |
 
 ## Quick start
 
@@ -66,8 +67,12 @@ multiplexing over UDS/vsock-style transports into per-node Edge runtimes).
 git clone https://github.com/idrees2516/dsec-rs.git
 cd dsec-rs
 cargo build --release          # ~2 min on 2 cores
-cargo test --workspace         # 445 tests: unit + integration + e2e
+cargo test --workspace --all-features   # 620 tests: unit + integration + doc
 ```
+
+A practical adoption guide — who uses which layer, and how to wire the
+crates into a training loop, an eval harness, or a platform — lives in
+[**`docs/usage.md`**](docs/usage.md).
 
 Run the examples (each exercises a full stack slice):
 
@@ -91,10 +96,10 @@ UDS transports, and RL invariants (episode contiguity, LSTM reset-on-done,
 GAE correctness vs a naive reference):
 
 ```bash
-cargo test --workspace                       # everything (261)
-cargo test -p dsec-agentenv --features server,parquet  # + the REST/parquet-gated suites (269 total)
-cargo test -p dsec-karotte                             # + the Karotte pipeline (184 total)
-cargo test -p dsec-autoenv                             # + the AutoEnvScaling flywheel (167 total)
+cargo test --workspace --all-features           # everything (620)
+cargo test -p dsec-agentenv --features server,parquet  # the REST/parquet-gated suites (77)
+cargo test -p dsec-karotte                             # the Karotte pipeline (184)
+cargo test -p dsec-autoenv                             # the AutoEnvScaling flywheel (167)
 cargo test -p dsec-storage packdiff          # one area
 cargo nextest run                            # if you prefer nextest
 ```
@@ -196,20 +201,30 @@ language mapping and the integration points a real deployment would use.
 crates/
   dsec-protocol/  dsec-storage/  dsec-runtime/  dsec-control/
   dsec-sdk/       dsec-rl/       dsec-agentenv/  dsec-karotte/  dsec-autoenv/
-  dsec-firecracker/
-  dsec-bench/
+  dsec-firecracker/  dsec-profiling/  dsec-bench/
 docs/
+  usage.md                   practical adoption guide (who + how)
   architecture.md            component deep-dive
   paper-mapping.md           paper claim -> code artifact map
   mimo-liverl.md             MiMo Live RL -> dsec-agentenv artifact map
   karotte.md                 Karotte -> dsec-karotte artifact map
   autoenvscaling.md          AutoEnvScaling paper -> dsec-autoenv artifact map
+  performance.md             the v0.2.0 optimization campaign (A/B evidence)
   benchmarks.md              full benchmark logs
+  publishing.md              crates.io publish runbook
   DSec_Rust_Reimplementation_Report.pdf   ~8k-word research report
 .github/
   workflows/ci.yml           fmt + clippy (-D warnings) + tests + MSRV
+  workflows/publish.yml      tags -> crates.io + GitHub releases
   dependabot.yml             weekly cargo dependency bumps
+scripts/research/
+  mimo-samples/download.sh   one command: fetch the real HF parquet shards
 ```
+
+The clone is deliberately small (~0.55 MiB): the PDF report and the two
+figures are palette/compressed, and the git history carries only the
+compressed blobs. Downloaded dataset shards are git-ignored and
+re-fetchable with the script above.
 
 ## Contributing
 

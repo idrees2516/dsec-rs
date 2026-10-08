@@ -13,4 +13,4 @@ dsec-runtime = { path = "../dsec-runtime" }
 dsec-protocol = { path = "../dsec-protocol" }
 dsec-storage = { path = "../dsec-storage" }
 tokio = { workspace = true }
-pprof = { version = "0.14", features = ["flamegraph"] }
+pprof = { version = "0.15", features = ["flamegraph"] }

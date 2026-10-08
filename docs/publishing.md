@@ -1,6 +1,6 @@
 # Publishing dsec-rs to crates.io
 
-All eight public crates are publish-ready: per-crate metadata
+All eleven public crates are publish-ready: per-crate metadata
 (`description`, `keywords` ≤ 5 × 20 chars, valid `categories` slugs,
 crate-level `README.md`), workspace-inherited `version`/`license`/
 `repository`, and **versioned path dependencies** in the workspace

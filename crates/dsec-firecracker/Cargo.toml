@@ -14,7 +14,6 @@ homepage.workspace = true
 
 [dependencies]
 tokio = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 dsec-runtime = { workspace = true }
 dsec-storage = { workspace = true }

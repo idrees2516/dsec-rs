@@ -16,7 +16,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT"
@@ -36,16 +36,16 @@ serde_json = "1"
 thiserror = "2"
 axum = "0.8"
 
-dsec-protocol = { path = "crates/dsec-protocol", version = "0.4.0" }
-dsec-storage = { path = "crates/dsec-storage", version = "0.4.0" }
-dsec-runtime = { path = "crates/dsec-runtime", version = "0.4.0" }
-dsec-control = { path = "crates/dsec-control", version = "0.4.0" }
-dsec-sdk = { path = "crates/dsec-sdk", version = "0.4.0" }
-dsec-rl = { path = "crates/dsec-rl", version = "0.4.0" }
-dsec-agentenv = { path = "crates/dsec-agentenv", version = "0.4.0" }
-dsec-karotte = { path = "crates/dsec-karotte", version = "0.4.0" }
-dsec-autoenv = { path = "crates/dsec-autoenv", version = "0.4.0" }
-dsec-firecracker = { path = "crates/dsec-firecracker", version = "0.4.0" }
+dsec-protocol = { path = "crates/dsec-protocol", version = "0.5.0" }
+dsec-storage = { path = "crates/dsec-storage", version = "0.5.0" }
+dsec-runtime = { path = "crates/dsec-runtime", version = "0.5.0" }
+dsec-control = { path = "crates/dsec-control", version = "0.5.0" }
+dsec-sdk = { path = "crates/dsec-sdk", version = "0.5.0" }
+dsec-rl = { path = "crates/dsec-rl", version = "0.5.0" }
+dsec-agentenv = { path = "crates/dsec-agentenv", version = "0.5.0" }
+dsec-karotte = { path = "crates/dsec-karotte", version = "0.5.0" }
+dsec-autoenv = { path = "crates/dsec-autoenv", version = "0.5.0" }
+dsec-firecracker = { path = "crates/dsec-firecracker", version = "0.5.0" }
 
 [profile.release]
 opt-level = 3
