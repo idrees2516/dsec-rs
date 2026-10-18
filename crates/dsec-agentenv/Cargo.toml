@@ -34,7 +34,7 @@ default-features = false
 features = ["arrow", "snap"]
 
 [dependencies.arrow]
-version = "53"
+version = "54"
 optional = true
 default-features = false
 features = ["json"]
