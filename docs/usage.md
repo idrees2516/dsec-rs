@@ -1,8 +1,8 @@
 # Using dsec-rs — a practical adoption guide
 
 This guide answers the question every new reader has after the README:
-**"OK, so what do I actually *do* with this?"** It maps the twelve crates
-to four concrete engineering personas, gives copy-paste entry points for
+**"OK, so what do I actually *do* with this?"** It maps the fourteen crates
+to five concrete engineering personas, gives copy-paste entry points for
 each, and names the exact integration points you would replace to move
 from the deterministic userspace simulation to a production deployment.
 
@@ -23,12 +23,42 @@ runs anywhere Rust runs, with zero infrastructure requirements.
 | **Eval / environments engineer** — needs reproducible, cheat-proof eval tasks | `dsec-agentenv`, `dsec-karotte`, `dsec-autoenv` | rubric verifiers, confinement + resource governance, adversarial screening, environment proposal pipelines |
 | **Platform / infra engineer** — needs the sandbox cloud itself | `dsec-protocol`, `dsec-storage`, `dsec-runtime`, `dsec-control`, `dsec-sdk`, `dsec-firecracker` | the two-plane architecture: REST management plane, Aether data plane, microVM backends, quota/placement/eviction |
 | **Performance / systems engineer** — needs numbers, not vibes | `dsec-bench`, `dsec-profiling` | A/B'd throughput evidence, flamegraphs, per-subsystem rates vs the paper's anchors |
+| **Training-infra / RL-platform engineer** — needs the durable rollout + training loop itself | `dsec-orchestrator`, `dsec-train` | journaled crash-safe rollouts, idempotent tool calls, branch-safe subagents, policy versions + publication barriers, bounded staleness, elastic GPU scheduling |
 
 None of these personas needs root, Docker, GPUs, or a cluster: the
 default simulation mode is a seeded userspace model (splitmix64 PRNG,
 injectable latency profiles). That is the point — you can develop and
 test sandbox-cloud *logic* on a laptop and port it to real isolation
 later.
+
+## 1b. Run the phased build (the 7-phase production pipeline)
+
+The [phased build order](phased-build.md) is now end-to-end executable:
+
+```bash
+# Phase 1: one agent, real environment, full lifecycle over real HTTP
+cargo run --release --example phase1_task --features server -p dsec-orchestrator
+cargo run --release --example phase1_task --features server -- --dsec   # real local cluster + UDS
+cargo run --release --example phase1_task --features server -- --real   # your DSEC_MODEL_URL endpoint
+
+# Phase 2: crash mid-tool-call → recover → side effects happen exactly once
+cargo run --release --example phase2_crash_recovery --features server -p dsec-orchestrator
+
+# Phase 3: subagents fork, patch, merge (conflicts detected)
+cargo run --release --example phase3_subagents --features server -p dsec-orchestrator
+
+# Phase 5: fixed-pool training loop — rollouts stamped with policy versions
+cargo run --release --example phase5_fixed_pool --features server -p dsec-train
+
+# Phase 6: elastic vs Async vs Colocate + draining transitions
+cargo run --release --example phase6_elastic -p dsec-train
+```
+
+The stack also composes: point `dsec-orchestrator`'s `OpenAiCompatClient`
+at `dsec-train`'s policy server and you have a single-process training
+system — rollout worker → journal → TITO records → trainer → publication
+barrier → new policy served — every contract in the loop tested,
+including crash injection at each boundary.
 
 ## 2. Choose your entry point
 

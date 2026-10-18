@@ -1,0 +1,43 @@
+[package]
+name = "dsec-train"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Fixed-pool and elastic agentic RL training: policy versions, publication barriers, bounded staleness, cell-role scheduling, waterlevel tracking, and Async/Colocate/Elastic benchmarking"
+
+[dependencies]
+dsec-protocol = { workspace = true }
+dsec-rl = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[features]
+default = []
+# The policy model server (axum) — OpenAI-compatible serving of the
+# published policy for end-to-end phase 5 loops.
+server = ["dep:axum"]
+
+[dependencies.axum]
+workspace = true
+optional = true
+
+[dev-dependencies]
+tempfile = "3"
+dsec-orchestrator = { workspace = true }
+
+[[example]]
+name = "phase5_fixed_pool"
+required-features = ["server"]
+
+[[example]]
+name = "phase6_elastic"

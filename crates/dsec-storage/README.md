@@ -21,6 +21,12 @@ caches and `pack_diff` working-state snapshots.
 - **pack_diff** — snapshots of dirty blocks + FS metadata + allocator
   cursor; `replica_from` materializes an identical working state
   without a full image copy (the paper's ~20-50x size reduction).
+- **ArtifactStore** (`artifact`) — the hardened real-filesystem store
+  (Phase 7): atomic temp-fsync-rename writes, SHA-256-verified reads,
+  traversal-proof ids (component checks + canonical containment),
+  hash-covered manifests. Attacker-tested: path traversal, symlink
+  escape, content tampering, torn writes, manifest forgery and
+  editing.
 
 ## Example
 

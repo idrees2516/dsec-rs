@@ -136,3 +136,12 @@ discovery, the REST surface, and the repo pipeline. Run with:
 ```bash
 cargo test -p dsec-agentenv --features server,parquet
 ```
+
+## Branch-safe forks (Phase 3 support)
+
+`SimPod::fork()` deep-copies a pod's writable state (volumes, DB rows,
+session logs, protection hashes) and shares only the immutable tool
+surface — the in-memory analogue of the paper's pack_diff
+checkpoint/restore. `dsec-orchestrator`'s subagents fork isolated
+workspaces on this primitive; neither side observes the other's
+subsequent writes (test: `topology::tests::fork_isolates_writable_state_and_shares_tools`).

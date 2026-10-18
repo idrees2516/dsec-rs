@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the 7-phase production build order (Phases 1-7)
+
+- **`dsec-orchestrator`** (new crate) — the DSec §6.2 worker container:
+  a real OpenAI-compatible HTTP model client (egress allowlist enforced
+  pre-connect, idempotency keys, retries), the `TaskEnvironment`
+  contract over agentenv pods and dsec-sdk sandboxes, the fsync'd
+  SHA-256 hash-chained orchestrator journal, the durable rollout loop
+  with four crash-injection points, recovery that never repeats tool
+  side effects (durable in-sandbox idempotency ledgers), branch-safe
+  subagents with three-way merge validation + bounded concurrency, and
+  attacker-tested journal/egress/replay defenses. 19 integration tests.
+- **`dsec-train`** (new crate) — fixed-pool + elastic agentic RL
+  training: `TinyLm` with hand-written policy gradients, explicit policy
+  versions + publication barriers, bounded staleness, draining
+  cell-role transitions with safe rerouting, rollout waterlevel,
+  joinable streaming batches, and the Async/Colocate/Elastic benchmark.
+  15 tests including the full HTTP training loop e2e.
+- **`dsec-rl`** — the Phase 4 RL data path: TITO records (token-origin
+  masks + shared tokenizer), trajectory trees with shared-prefix node
+  reuse (shared targets counted once), the reward-validity tri-state
+  (evaluator failures never become reward zero), group advantages over
+  scorable members, execution-level loss normalization with merged
+  shared-target terms. +18 tests.
+- **`dsec-agentenv`** — `SimPod::fork()` (deep-copied writable state,
+  shared immutable tool surface — the in-memory pack_diff for subagent
+  isolation) and `StateDb::table_names/primary_key` enumeration.
+- **`dsec-storage`** — `artifact`: the hardened real-filesystem
+  artifact store (atomic temp-fsync-rename, SHA-256-verified reads,
+  traversal-proof ids, hash-covered manifests) with 7 attacker tests.
+- **`dsec-protocol`** — in-tree SHA-256 (NIST-tested) for tamper-evident
+  journals and artifact checksums.
+- **Docs** — `docs/phased-build.md` (the phase map with
+  real/simulated/deployment labels), the usage guide's phased-build
+  section, READMEs for both new crates.
+- Workspace: 14 crates, 698 tests passing (+78), 5 runnable phase
+  examples.
+
 ### Planned
 
 - Inline-first-poll fast path for Aether request handling (poll each

@@ -22,7 +22,11 @@
 //!   `SharedRegion`s standing in for torch shared-memory handoff.
 //! - [`latency`] — injectable latency model so benchmarks can replay the
 //!   paper's timing profile deterministically.
+//! - [`artifact`] — the hardened artifact store (Phase 7): atomic
+//!   temp-fsync-rename writes, SHA-256-verified reads, traversal-proof
+//!   ids, and hash-covered manifests.
 
+pub mod artifact;
 pub mod cache;
 pub mod erofs;
 pub mod error;

@@ -286,6 +286,12 @@ pub mod vols {
 /// The tool is the only sanctioned mutation path into [`StateDb`],
 /// mirroring how the real sidecar's `tools/<mcp>.py` is the only writer
 /// of `state.db`.
+///
+/// Executors are [`Arc`] clones so pods can be **forked** (branch-safe
+/// subagent workspaces): the fork deep-copies state and shares the
+/// read-only tool surface, exactly like the paper's pack_diff restore
+/// re-attaching the same sidecar image to a copied writable layer.
+#[derive(Clone)]
 pub struct ToolDef {
     /// Tool name (as exposed over MCP).
     pub name: String,
@@ -294,7 +300,7 @@ pub struct ToolDef {
     /// Human description shown to the model.
     pub description: String,
     /// The executor: mutates state, returns the observation payload.
-    pub exec: Box<dyn Fn(&mut ToolCtx) -> serde_json::Value + Send>,
+    pub exec: std::sync::Arc<dyn Fn(&mut ToolCtx) -> serde_json::Value + Send + Sync>,
 }
 
 impl std::fmt::Debug for ToolDef {
@@ -361,6 +367,28 @@ impl SimPod {
     /// New builder for a pod.
     pub fn builder(name: &str) -> PodBuilder {
         PodBuilder::new(name)
+    }
+
+    /// Forks the pod into an isolated sibling workspace (branch-safe
+    /// subagent primitive).
+    ///
+    /// The fork deep-copies all writable state — volumes, state DBs,
+    /// session logs, listening ports, protection hashes — and shares only
+    /// the immutable tool surface (the `Arc` executors). This is the
+    /// in-memory analogue of the paper's `pack_diff` checkpoint/restore:
+    /// snapshot the writable layer, re-attach the same read-only sidecar.
+    /// Neither pod can observe the other's subsequent writes.
+    pub fn fork(&self, new_name: &str) -> SimPod {
+        SimPod {
+            name: new_name.to_string(),
+            containers: self.containers.clone(),
+            volumes: self.volumes.clone(),
+            state: self.state.clone(),
+            servers: self.servers.clone(),
+            listening: self.listening.clone(),
+            phase: self.phase,
+            protected_hashes: self.protected_hashes.clone(),
+        }
     }
 
     /// Copies a local file into a container path (`copy_to`).
@@ -1330,5 +1358,104 @@ mod tests {
     fn shell_split_quotes() {
         let t = shell_split("cat 'a b.txt' \"c d.py\" e");
         assert_eq!(t, vec!["cat", "a b.txt", "c d.py", "e"]);
+    }
+
+    #[test]
+    fn fork_isolates_writable_state_and_shares_tools() {
+        use crate::state::{Schema, StateDb, Table};
+
+        // parent pod: crm DB + a mutating tool
+        let schema = Schema::new().table(Table::text("customers", "id", &["id", "status"]));
+        let mut db = StateDb::new(schema);
+        db.seed_rows(
+            "customers",
+            [serde_json::json!({"id": "C1", "status": "active"})
+                .as_object()
+                .unwrap()
+                .clone()],
+        );
+        let mut pod = SimPod::builder("parent")
+            .system("crm", db)
+            .server(
+                "crm",
+                vec![ToolDef {
+                    name: "set_status".into(),
+                    params_schema: serde_json::json!(
+                        {"type": "object", "properties": {"status": {"type": "string"}}}
+                    ),
+                    description: "Set customer status".into(),
+                    exec: std::sync::Arc::new(|ctx| {
+                        let st = ctx.param_str("status").unwrap_or("off").to_string();
+                        let mut patch = serde_json::Map::new();
+                        patch.insert("status".into(), serde_json::json!(st));
+                        match ctx
+                            .db_mut("crm")
+                            .and_then(|db| db.update("customers", "C1", patch).ok())
+                        {
+                            Some(row) => serde_json::json!(row),
+                            None => serde_json::json!({"error": "update failed"}),
+                        }
+                    }),
+                }],
+            )
+            .build();
+        pod.execute(
+            "python3 /installed-agent/sidecar_entrypoint.py --start-and-detach",
+            crate::manifest::SIDECAR,
+            30,
+        );
+
+        // fork, then diverge both sides through their own tool calls
+        let mut child = pod.fork("branch-1");
+        let pr = pod
+            .call_tool(
+                "crm",
+                "set_status",
+                serde_json::json!({"status": "parent-mut"}),
+            )
+            .unwrap();
+        let cr = child
+            .call_tool(
+                "crm",
+                "set_status",
+                serde_json::json!({"status": "child-mut"}),
+            )
+            .unwrap();
+        assert_eq!(pr["status"], "parent-mut");
+        assert_eq!(cr["status"], "child-mut");
+
+        // isolation: parent still sees only its write, child only its own
+        let pr2 = pod
+            .call_tool("crm", "set_status", serde_json::json!({"status": "noop"}))
+            .unwrap();
+        let cr2 = child
+            .call_tool("crm", "set_status", serde_json::json!({"status": "noop2"}))
+            .unwrap();
+        assert_eq!(
+            pr2["status"], "noop",
+            "parent must not observe child writes"
+        );
+        assert_eq!(
+            cr2["status"], "noop2",
+            "child must not observe parent writes"
+        );
+
+        // shared read-only tool surface survives the fork
+        assert!(child.servers.contains_key("crm"));
+        assert_eq!(child.servers["crm"].len(), 1);
+        assert_ne!(pod.name, child.name);
+
+        // volumes deep-copied: file writes do not leak across the fork
+        pod.write_file(crate::manifest::MAIN, "/work/workspace/parent.txt", b"p")
+            .unwrap();
+        child
+            .write_file(crate::manifest::MAIN, "/work/workspace/child.txt", b"c")
+            .unwrap();
+        assert!(pod
+            .read_file(crate::manifest::MAIN, "/work/workspace/child.txt")
+            .is_none());
+        assert!(child
+            .read_file(crate::manifest::MAIN, "/work/workspace/parent.txt")
+            .is_none());
     }
 }

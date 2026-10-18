@@ -11,6 +11,8 @@
 //! - [`message`] — request/response message types (serde)
 //! - [`codec`] — async encode/decode over any `AsyncRead`/`AsyncWrite`
 //! - [`rng`] — shared deterministic splitmix64 PRNG for reproducible simulation
+//! - [`hash`] — in-tree SHA-256 for tamper-evident journals and artifact
+//!   checksums
 //!
 //! The transport itself is intentionally abstract: the same codec runs over
 //! an in-process channel pair (deterministic simulation / tests) or a real
@@ -20,11 +22,13 @@
 pub mod codec;
 pub mod error;
 pub mod frame;
+pub mod hash;
 pub mod message;
 pub mod rng;
 
 pub use error::{Error, Result};
 pub use frame::{Frame, FrameHeader, CRC32};
+pub use hash::{hex, sha256, sha256_hex};
 pub use message::{Request, Response};
 
 /// Maximum payload accepted by the codec (16 MiB), guards against

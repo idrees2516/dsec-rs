@@ -204,7 +204,7 @@ impl ToolSpec {
             name: tool_name,
             params_schema: self.schema(),
             description: self.description.clone(),
-            exec: Box::new(move |ctx: &mut ToolCtx| execute_op(&op, ctx)),
+            exec: std::sync::Arc::new(move |ctx: &mut ToolCtx| execute_op(&op, ctx)),
         }
     }
 }

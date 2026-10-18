@@ -482,7 +482,7 @@ dependencies = [
 
 [[package]]
 name = "dsec-agentenv"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "arrow",
  "axum",
@@ -498,7 +498,7 @@ dependencies = [
 
 [[package]]
 name = "dsec-autoenv"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "rand",
  "serde",
@@ -508,7 +508,7 @@ dependencies = [
 
 [[package]]
 name = "dsec-bench"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dsec-control",
  "dsec-protocol",
@@ -522,7 +522,7 @@ dependencies = [
 
 [[package]]
 name = "dsec-control"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "axum",
  "dsec-protocol",
@@ -534,7 +534,7 @@ dependencies = [
 
 [[package]]
 name = "dsec-firecracker"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dsec-protocol",
  "dsec-runtime",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "dsec-karotte"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -554,8 +554,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "dsec-orchestrator"
+version = "0.5.0"
+dependencies = [
+ "axum",
+ "dsec-agentenv",
+ "dsec-control",
+ "dsec-protocol",
+ "dsec-rl",
+ "dsec-runtime",
+ "dsec-sdk",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "dsec-profiling"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dsec-protocol",
  "dsec-rl",
@@ -567,7 +585,7 @@ dependencies = [
 
 [[package]]
 name = "dsec-protocol"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "crc32fast",
  "serde",
@@ -578,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "dsec-rl"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dsec-protocol",
  "dsec-runtime",
@@ -590,7 +608,7 @@ dependencies = [
 
 [[package]]
 name = "dsec-runtime"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dsec-protocol",
  "dsec-storage",
@@ -602,7 +620,7 @@ dependencies = [
 
 [[package]]
 name = "dsec-sdk"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dsec-control",
  "dsec-protocol",
@@ -616,11 +634,27 @@ dependencies = [
 
 [[package]]
 name = "dsec-storage"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dsec-protocol",
  "serde",
  "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "dsec-train"
+version = "0.5.0"
+dependencies = [
+ "axum",
+ "dsec-orchestrator",
+ "dsec-protocol",
+ "dsec-rl",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
 ]

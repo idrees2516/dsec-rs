@@ -808,7 +808,7 @@ mod tests {
                         name: "get_customer".into(),
                         params_schema: json!({"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}),
                         description: "Fetch a customer".into(),
-                        exec: Box::new(|ctx| match ctx
+                        exec: std::sync::Arc::new(|ctx| match ctx
                             .db("crm")
                             .and_then(|db| db.get("customers", ctx.param_str("id").unwrap_or("")))
                         {

@@ -26,6 +26,30 @@ PufferLib's core, ported to Rust — plus the paper's flagship use case:
   each env gets its own sandbox, actions are shell commands, the full
   Chronus data plane runs per step.
 
+## The agentic-RL data path (QWENGYRE contracts)
+
+- **TITO records** (`tito`) — token-level origin classification:
+  model-generated tokens are the *only* training targets; tool results,
+  harness text, and system templates are masked out. Includes a
+  deterministic shared `SimpleTokenizer`.
+- **Trajectory trees** (`trajectory`) — executions of one task group
+  share prefix nodes; **shared-prefix targets are counted once**
+  (deduplicated for training cost), each node preserving its original
+  conditioning context.
+- **Reward validity** (`reward`) — a tri-state (valid / genuinely
+  failed / **evaluator failure**): infra failures carry no score, are
+  excluded from group statistics, and are **never converted to reward
+  zero**. GRPO-style group advantages over scorable members only.
+- **Execution-level loss** (`loss`) — `compute_loss_terms` emits the
+  trainer-facing `LossTerm`s: per-execution token averaging (an
+  execution with more turns carries no extra mass), merged
+  shared-target terms with mean advantages, and hard exclusion of
+  evaluator failures.
+
+These four modules are the data contract `dsec-train`'s trainer
+consumes; `dsec-orchestrator` maps its rollouts onto them via
+`WorkerRollout::to_transcript_turns`.
+
 ## Example
 
 ```rust,no_run

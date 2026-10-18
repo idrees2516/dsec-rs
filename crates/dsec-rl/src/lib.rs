@@ -21,17 +21,39 @@
 //!   miniature.
 //! - [`fastenv::FastCounterEnv`] — pure-compute env for throughput
 //!   floors (pufferlib's "release the GIL" analogue: here, no I/O).
+//! - [`tito`] — **TITO records** (Tool-Interleaved Trajectory
+//!   Optimization): token-level origin classification (model-generated /
+//!   tool-result / harness-injected / system-template) with target
+//!   masks, plus the deterministic shared tokenizer.
+//! - [`trajectory`] — trajectory trees with shared prefixes: executions
+//!   of one task group share prefix nodes; shared targets are counted
+//!   once (QWENGYRE's trajectory processor semantics).
+//! - [`reward`] — reward validity tri-state (valid / invalid /
+//!   evaluator-failure — never a false zero) and GRPO-style group
+//!   advantages over scorable members only.
+//! - [`loss`] — execution-level loss normalization: per-execution token
+//!   averaging (an execution with more turns carries no extra mass),
+//!   merged shared-target terms, and the [`loss::LossTerm`] contract the
+//!   trainer consumes.
 
 pub mod buffer;
 pub mod driver;
 pub mod envpool;
 pub mod error;
 pub mod fastenv;
+pub mod loss;
 pub mod lstm;
+pub mod reward;
 pub mod sandbox_env;
 pub mod spaces;
+pub mod tito;
+pub mod trajectory;
 
 pub use buffer::{EpisodeChunk, ReplayBuffer, SequenceBatch, StepSlice, Transition};
 pub use driver::{Driver, DriverConfig, PolicyFn, RolloutStats};
 pub use envpool::{Env, EnvPool, StepResult};
+pub use loss::{compute_loss_terms, compute_loss_terms_with, ExecutionInput, LossOutput, LossTerm};
+pub use reward::{group_advantage, AdvantageConfig, RewardRecord, RewardValidity};
 pub use spaces::{Action, ActionSpace, ObsSpace};
+pub use tito::{SimpleTokenizer, TitoRecord, TokenOrigin, TranscriptTurn};
+pub use trajectory::{TrajectoryNode, TrajectoryTree};

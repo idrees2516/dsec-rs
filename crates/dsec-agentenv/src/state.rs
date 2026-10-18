@@ -256,6 +256,19 @@ impl StateDb {
             .unwrap_or_default()
     }
 
+    /// Table names in schema order (row enumeration for patch/diff
+    /// tooling).
+    pub fn table_names(&self) -> Vec<String> {
+        self.schema.tables.iter().map(|t| t.name.clone()).collect()
+    }
+
+    /// The primary-key column of a table.
+    pub fn primary_key(&self, table: &str) -> Option<String> {
+        self.schema
+            .table_by_name(table)
+            .map(|t| t.primary_key.clone())
+    }
+
     /// Selects rows matching all equality predicates (`col = value`).
     pub fn select_where(&self, table: &str, eq: &Map<String, Value>) -> Vec<&Map<String, Value>> {
         self.select_all(table)

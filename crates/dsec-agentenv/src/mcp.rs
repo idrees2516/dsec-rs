@@ -429,7 +429,7 @@ mod tests {
                     name: "get_customer".into(),
                     params_schema: json!({"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}),
                     description: "Fetch one customer".into(),
-                    exec: Box::new(|ctx| {
+                    exec: std::sync::Arc::new(|ctx| {
                         let id = ctx.param_str("id").unwrap_or_default();
                         match ctx.db("crm").and_then(|db| db.get("customers", id)) {
                             Some(row) => json!(row),

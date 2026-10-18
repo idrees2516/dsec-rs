@@ -12,6 +12,8 @@ members = [
     "crates/dsec-karotte",
     "crates/dsec-autoenv",
     "crates/dsec-firecracker",
+    "crates/dsec-orchestrator",
+    "crates/dsec-train",
     "crates/dsec-bench",
 ]
 
@@ -46,6 +48,8 @@ dsec-agentenv = { path = "crates/dsec-agentenv", version = "0.5.0" }
 dsec-karotte = { path = "crates/dsec-karotte", version = "0.5.0" }
 dsec-autoenv = { path = "crates/dsec-autoenv", version = "0.5.0" }
 dsec-firecracker = { path = "crates/dsec-firecracker", version = "0.5.0" }
+dsec-orchestrator = { path = "crates/dsec-orchestrator", version = "0.5.0" }
+dsec-train = { path = "crates/dsec-train", version = "0.5.0" }
 
 [profile.release]
 opt-level = 3
